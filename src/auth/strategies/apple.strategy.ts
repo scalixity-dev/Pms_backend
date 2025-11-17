@@ -38,7 +38,7 @@ export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
     const user: AppleProfile = {
       provider: 'APPLE',
       providerUserId: sub,
-      email: profile.email || profile.email || '',
+      email: profile.email || '',
       fullName: profile.name
         ? `${profile.name.firstName || ''} ${profile.name.lastName || ''}`.trim()
         : profile.email || '',
