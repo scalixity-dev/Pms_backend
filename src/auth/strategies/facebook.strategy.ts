@@ -30,11 +30,16 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
   ): Promise<void> {
     const { id, name, emails } = profile;
 
+    const email = emails?.[0]?.value;
+    if (!email) {
+      return done(new Error('Email is required from Facebook profile'), null);
+    }
+
     const user: FacebookProfile = {
       provider: 'FACEBOOK',
       providerUserId: id,
-      email: emails?.[0]?.value || '',
-      fullName: name ? `${name.givenName || ''} ${name.familyName || ''}`.trim() : emails?.[0]?.value || '',
+      email: email,
+      fullName: name ? `${name.givenName || ''} ${name.familyName || ''}`.trim() : email,
     };
 
     done(null, user);
