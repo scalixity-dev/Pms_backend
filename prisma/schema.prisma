@@ -1,0 +1,155 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  PROPERTY_MANAGER
+  TENANT
+  SERVICE_PRO
+}
+
+model User {
+  id        BigInt   @id @default(autoincrement())
+  role      UserRole @default(PROPERTY_MANAGER)
+  email     String   @unique
+  fullName  String
+  phoneCountryCode String?
+  phoneNumber      String?
+  country   String?
+  state     String?
+  pincode   String?
+  address   String?
+  isEmailVerified Boolean @default(false)
+  isActive        Boolean @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  authIdentities UserAuthIdentity[]
+  subscriptions  Subscription[]
+  properties     Property[] @relation("ManagerProperties")
+  devices        Device[]
+  otps           Otp[]
+}
+
+enum AuthProvider {
+  EMAIL_PASSWORD
+  GOOGLE
+  APPLE
+  FACEBOOK
+}
+
+model UserAuthIdentity {
+  id             BigInt       @id @default(autoincrement())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         BigInt
+  provider       AuthProvider
+  providerUserId String?
+  passwordHash   String?
+  lastLoginAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  @@unique([userId, provider])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  EXPIRED
+  TRIALING
+}
+
+model Subscription {
+  id              BigInt             @id @default(autoincrement())
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          BigInt
+  planId          String
+  status          SubscriptionStatus
+  startDate       DateTime
+  endDate         DateTime?
+  nextBillingDate DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum PropertyType {
+  SINGLE
+  MULTI
+}
+
+enum PropertyStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+model Address {
+  id            BigInt  @id @default(autoincrement())
+  streetAddress String
+  city          String
+  stateRegion   String
+  zipCode       String
+  country       String
+
+  properties Property[]
+}
+
+model Property {
+  id            BigInt          @id @default(autoincrement())
+  manager       User            @relation("ManagerProperties", fields: [managerId], references: [id])
+  managerId     BigInt
+  propertyName  String
+  yearBuilt     Int?
+  mlsNumber     String?
+  propertyType  PropertyType
+  sizeSqft      Decimal?
+  marketRent    Decimal?
+  depositAmount Decimal?
+  address       Address?        @relation(fields: [addressId], references: [id])
+  addressId     BigInt?
+  description   String?
+  status        PropertyStatus  @default(ACTIVE)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+enum OtpType {
+  EMAIL_VERIFICATION
+  DEVICE_VERIFICATION
+}
+
+model Otp {
+  id        BigInt   @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    BigInt
+  code      String
+  type      OtpType
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, type, isUsed])
+  @@index([code, expiresAt, isUsed])
+}
+
+model Device {
+  id            BigInt   @id @default(autoincrement())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        BigInt
+  ipAddress     String
+  userAgent     String?
+  deviceFingerprint String?
+  isVerified    Boolean  @default(false)
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, ipAddress, deviceFingerprint])
+  @@index([userId, isVerified])
+}
