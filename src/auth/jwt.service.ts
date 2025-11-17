@@ -14,7 +14,11 @@ export class JwtService {
   private readonly expiresIn: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.secret = this.configService.get<string>('JWT_SECRET') || 'your-secret-key';
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET must be defined in environment variables');
+    }
+    this.secret = secret;
     this.expiresIn = this.configService.get<string>('JWT_EXPIRES_IN') || '7d';
   }
 
