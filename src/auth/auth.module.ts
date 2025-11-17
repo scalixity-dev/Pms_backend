@@ -10,8 +10,7 @@ import { AppleStrategy } from './strategies/apple.strategy';
 
 @Module({
   imports: [
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    EmailModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }), EmailModule
   ],
   controllers: [AuthController],
   providers: [

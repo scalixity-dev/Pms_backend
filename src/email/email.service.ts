@@ -8,6 +8,13 @@ export class EmailService {
   private transporter: nodemailer.Transporter;
 
   constructor(private readonly configService: ConfigService) {
+    const smtpUser = this.configService.get<string>('SMTP_USER');
+    const smtpPass = this.configService.get<string>('SMTP_PASS');
+    
+    if (!smtpUser || !smtpPass) {
+      throw new Error('SMTP_USER and SMTP_PASS must be defined in environment variables');
+    }
+    
     // Initialize nodemailer transporter
     // For production, use environment variables for SMTP configuration
     this.transporter = nodemailer.createTransport({
@@ -15,8 +22,8 @@ export class EmailService {
       port: this.configService.get<number>('SMTP_PORT', 587),
       secure: this.configService.get<boolean>('SMTP_SECURE', false), // true for 465, false for other ports
       auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
+        user: smtpUser,
+        pass: smtpPass,
       },
     });
   }
