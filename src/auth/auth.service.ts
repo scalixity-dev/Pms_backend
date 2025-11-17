@@ -9,7 +9,8 @@ import { EmailService } from '../email/email.service';
 import { JwtService } from './jwt.service';
 import { RegisterDto } from './dto/register.dto';
 import * as argon2 from 'argon2';
-import { AuthProvider, UserRole, OtpType } from '@prisma/client';
+import { AuthProvider, UserRole, OtpType, SubscriptionStatus } from '@prisma/client';
+import { randomInt } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -23,31 +24,81 @@ export class AuthService {
   ) {}
 
   /**
-   * Generate a random OTP code
+   * Generate a secure random OTP code using crypto.randomInt
    */
   private generateOtp(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate random integer between 0 and 10^OTP_LENGTH - 1
+    const max = Math.pow(10, this.OTP_LENGTH) - 1;
+    const min = Math.pow(10, this.OTP_LENGTH - 1);
+    const otp = randomInt(min, max + 1);
+    // Zero-pad to ensure consistent length
+    return otp.toString().padStart(this.OTP_LENGTH, '0');
   }
 
   /**
    * Check if property manager has an active subscription
+   * Returns true only if an active/valid subscription exists for the email
    */
   private async checkPropertyManagerSubscription(email: string): Promise<boolean> {
-    // For property managers, we need to check if they have a subscription
-    // This could be done by checking if there's a subscription record with their email
-    // or by checking a separate subscription table before user creation
-    // For now, we'll check if a subscription exists for this email
-    // You may need to adjust this based on your subscription flow
-    
-    // Option 1: Check if subscription exists by email (if you have a pre-registration subscription table)
-    // Option 2: For now, we'll allow registration but require subscription check
-    // This is a placeholder - adjust based on your subscription system
-    
-    // If you have a separate table for pending subscriptions, check here
-    // For this implementation, we'll assume subscription is checked via a separate endpoint
-    // and stored in a way that we can verify before registration
-    
-    return true; // Placeholder - implement your subscription check logic
+    // Handle null/undefined email
+    if (!email) {
+      return false;
+    }
+
+    try {
+      // Find user by email
+      const user = await this.prisma.user.findUnique({
+        where: { email },
+        include: {
+          subscriptions: {
+            where: {
+              status: {
+                in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING],
+              },
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+            take: 1,
+          },
+        },
+      });
+
+      // If user doesn't exist, no subscription
+      if (!user) {
+        return false;
+      }
+
+      // If no subscriptions found, return false
+      if (!user.subscriptions || user.subscriptions.length === 0) {
+        return false;
+      }
+
+      const subscription = user.subscriptions[0];
+      const now = new Date();
+
+      // Check if subscription has an end date and if it's still valid
+      if (subscription.endDate && subscription.endDate < now) {
+        return false;
+      }
+
+      // Check if subscription was cancelled
+      if (subscription.cancelledAt && subscription.cancelledAt <= now) {
+        return false;
+      }
+
+      // Check if subscription start date is in the future (shouldn't happen, but validate)
+      if (subscription.startDate > now) {
+        return false;
+      }
+
+      // Subscription is valid
+      return true;
+    } catch (error) {
+      // Log error and return false to fail securely
+      console.error('Error checking property manager subscription:', error);
+      return false;
+    }
   }
 
   /**
@@ -218,7 +269,7 @@ export class AuthService {
         },
       });
 
-      // Create and send email verification OTP
+      // Create email verification OTP using shared method
       const otpCode = this.generateOtp();
       const expiresAt = new Date();
       expiresAt.setMinutes(expiresAt.getMinutes() + this.OTP_EXPIRY_MINUTES);
@@ -233,26 +284,29 @@ export class AuthService {
         },
       });
 
-      // Send OTP email (outside transaction to avoid rollback on email failure)
-      try {
-        await this.emailService.sendOtpEmail(email, otpCode, fullName);
-      } catch (error) {
-        // Log error but don't fail registration
-        console.error('Failed to send OTP email:', error);
-      }
-
-      return newUser;
+      return { newUser, otpCode };
     });
+
+    // Send OTP email (outside transaction to avoid rollback on email failure)
+    try {
+      await this.emailService.sendOtpEmail(email, user.otpCode, fullName);
+    } catch (error) {
+      // Log error but don't fail registration
+      console.error('Failed to send OTP email:', error);
+    }
+
+    // Extract user from the result
+    const createdUser = user.newUser;
 
     // Return user data without sensitive information
     return {
-      id: user.id.toString(),
-      email: user.email,
-      fullName: user.fullName,
-      role: user.role,
-      isEmailVerified: user.isEmailVerified,
-      isActive: user.isActive,
-      createdAt: user.createdAt,
+      id: createdUser.id.toString(),
+      email: createdUser.email,
+      fullName: createdUser.fullName,
+      role: createdUser.role,
+      isEmailVerified: createdUser.isEmailVerified,
+      isActive: createdUser.isActive,
+      createdAt: createdUser.createdAt,
       message: 'Registration successful. Please check your email for OTP verification.',
     };
   }
@@ -297,7 +351,12 @@ export class AuthService {
   /**
    * Verify device OTP
    */
-  async verifyDeviceOtp(userId: string, code: string, ipAddress: string): Promise<void> {
+  async verifyDeviceOtp(
+    userId: string,
+    code: string,
+    ipAddress: string,
+    deviceFingerprint?: string,
+  ): Promise<void> {
     const userIdBigInt = BigInt(userId);
     const now = new Date();
 
@@ -324,10 +383,12 @@ export class AuthService {
         data: { isUsed: true },
       });
 
+      // Update device matching both IP and fingerprint (consistent with trackDevice)
       await tx.device.updateMany({
         where: {
           userId: userIdBigInt,
           ipAddress,
+          deviceFingerprint: deviceFingerprint || null,
         },
         data: { isVerified: true },
       });

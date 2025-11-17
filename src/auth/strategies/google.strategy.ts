@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, VerifyCallback } from 'passport-google-oauth20';
+import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
 
 export interface GoogleProfile {
   provider: 'GOOGLE';
@@ -24,16 +24,32 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   async validate(
     accessToken: string,
     refreshToken: string,
-    profile: any,
+    profile: Profile,
     done: VerifyCallback,
   ): Promise<void> {
     const { id, name, emails } = profile;
 
+    // Extract email with null/optional guards
+    const email = emails?.[0]?.value || '';
+
+    // Compute fullName defensively
+    let fullName = '';
+    if (name) {
+      const givenName = name.givenName || '';
+      const familyName = name.familyName || '';
+      fullName = `${givenName} ${familyName}`.trim();
+    }
+
+    // Fall back to email if fullName is empty
+    if (!fullName && email) {
+      fullName = email;
+    }
+
     const user: GoogleProfile = {
       provider: 'GOOGLE',
       providerUserId: id,
-      email: emails[0].value,
-      fullName: `${name.givenName} ${name.familyName}`.trim() || emails[0].value,
+      email,
+      fullName,
     };
 
     done(null, user);

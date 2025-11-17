@@ -56,7 +56,11 @@ export class AuthController {
    * Extract user agent from request
    */
   private getUserAgent(req: Request): string | undefined {
-    return req.headers['user-agent'];
+    const userAgent = req.headers['user-agent'];
+    if (Array.isArray(userAgent)) {
+      return userAgent[0];
+    }
+    return userAgent;
   }
 
   @Post('register')
@@ -89,7 +93,8 @@ export class AuthController {
     @Req() req: Request,
   ) {
     const ipAddress = this.getIpAddress(req);
-    await this.authService.verifyDeviceOtp(userId, verifyOtpDto.code, ipAddress);
+    const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
+    await this.authService.verifyDeviceOtp(userId, verifyOtpDto.code, ipAddress, deviceFingerprint);
     return {
       message: 'Device verified successfully',
     };
