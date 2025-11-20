@@ -106,7 +106,10 @@ export class EmailService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const errorCode = error instanceof Error && 'code' in error ? (error as any).code : '';
-     
+
+      this.logger.error(
+        `❌ SMTP connection verification failed: ${errorMessage}${errorCode ? ` (${errorCode})` : ''}`,
+      );
     }
   }
 
