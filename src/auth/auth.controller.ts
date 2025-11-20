@@ -89,18 +89,31 @@ export class AuthController {
 
     const result = await this.authService.login(loginDto, ipAddress, userAgent, deviceFingerprint);
 
-    // Set JWT as HTTP-only cookie
-    res.cookie('access_token', result.token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // Only set JWT cookie if token exists (i.e., device is verified)
+    if (result.token) {
+      res.cookie('access_token', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: '/', // Ensure cookie is available for all paths
+      });
+    }
 
     return res.json({
       user: result.user,
-      message: 'Login successful',
+      message: result.message || 'Login successful',
+      requiresDeviceVerification: result.requiresDeviceVerification || false,
     });
+  }
+
+  @Post('resend-email-otp/:userId')
+  @HttpCode(HttpStatus.OK)
+  async resendEmailOtp(@Param('userId') userId: string) {
+    await this.authService.resendEmailOtp(userId);
+    return {
+      message: 'OTP email sent successfully',
+    };
   }
 
   @Post('verify-email/:userId')
@@ -121,13 +134,23 @@ export class AuthController {
     @Param('userId') userId: string,
     @Body() verifyOtpDto: VerifyOtpDto,
     @Req() req: Request,
+    @Res() res: Response,
   ) {
     const ipAddress = this.getIpAddress(req);
     const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
-    await this.authService.verifyDeviceOtp(userId, verifyOtpDto.code, ipAddress, deviceFingerprint);
-    return {
+    const result = await this.authService.verifyDeviceOtp(userId, verifyOtpDto.code, ipAddress, deviceFingerprint);
+    
+    // Set JWT as HTTP-only cookie
+    res.cookie('access_token', result.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    return res.json({
       message: 'Device verified successfully',
-    };
+    });
   }
 
   @Post('activate-account/:userId')
@@ -153,6 +176,15 @@ export class AuthController {
       success: result.success,
       message: result.message,
     });
+  }
+
+  @Post('check-email')
+  @HttpCode(HttpStatus.OK)
+  async checkEmail(@Body() body: { email: string }) {
+    const exists = await this.authService.checkEmailExists(body.email);
+    return {
+      exists,
+    };
   }
 
   @Get('me')
