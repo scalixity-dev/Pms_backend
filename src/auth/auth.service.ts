@@ -13,6 +13,7 @@ import { LoginDto } from './dto/login.dto';
 import * as argon2 from 'argon2';
 import { AuthProvider, UserRole, OtpType, SubscriptionStatus } from '@prisma/client';
 import { randomInt } from 'crypto';
+import { addYears, addMonths } from 'date-fns';
 
 @Injectable()
 export class AuthService {
@@ -844,15 +845,14 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // Calculate subscription dates
+    // Calculate subscription dates using date-fns for safe date arithmetic
     const startDate = new Date();
     const endDate = isYearly 
-      ? new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate())
-      : new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate());
+      ? addYears(startDate, 1)
+      : addMonths(startDate, 1);
     
-    const nextBillingDate = isYearly
-      ? new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate())
-      : new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate());
+    // nextBillingDate is the same as endDate
+    const nextBillingDate = endDate;
 
     // Create subscription and activate account in a transaction
     await this.prisma.$transaction(async (tx) => {
