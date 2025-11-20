@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
+import { SignOptions } from 'jsonwebtoken';
 
 export interface JwtPayload {
   userId: string;
@@ -52,7 +53,7 @@ export class JwtService {
    */
   sign(payload: JwtPayload): string {
     return jwt.sign(payload, this.secret, {
-      expiresIn: this.expiresIn,
+      expiresIn: this.expiresIn as SignOptions['expiresIn'],
     });
   }
 

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 // Extend Express Request to include user property from Passport
 interface AuthenticatedRequest extends Request {
@@ -24,7 +25,9 @@ interface AuthenticatedRequest extends Request {
 }
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { ActivateAccountDto } from './dto/activate-account.dto';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { FacebookStrategy } from './strategies/facebook.strategy';
 import { AppleStrategy } from './strategies/apple.strategy';
@@ -73,6 +76,46 @@ export class AuthController {
     return this.authService.register(registerDto, ipAddress, userAgent, deviceFingerprint);
   }
 
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(
+    @Body() loginDto: LoginDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const ipAddress = this.getIpAddress(req);
+    const userAgent = this.getUserAgent(req);
+    const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
+
+    const result = await this.authService.login(loginDto, ipAddress, userAgent, deviceFingerprint);
+
+    // Only set JWT cookie if token exists (i.e., device is verified)
+    if (result.token) {
+      res.cookie('access_token', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        path: '/', // Ensure cookie is available for all paths
+      });
+    }
+
+    return res.json({
+      user: result.user,
+      message: result.message || 'Login successful',
+      requiresDeviceVerification: result.requiresDeviceVerification || false,
+    });
+  }
+
+  @Post('resend-email-otp/:userId')
+  @HttpCode(HttpStatus.OK)
+  async resendEmailOtp(@Param('userId') userId: string) {
+    await this.authService.resendEmailOtp(userId);
+    return {
+      message: 'OTP email sent successfully',
+    };
+  }
+
   @Post('verify-email/:userId')
   @HttpCode(HttpStatus.OK)
   async verifyEmailOtp(
@@ -91,13 +134,80 @@ export class AuthController {
     @Param('userId') userId: string,
     @Body() verifyOtpDto: VerifyOtpDto,
     @Req() req: Request,
+    @Res() res: Response,
   ) {
     const ipAddress = this.getIpAddress(req);
     const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
-    await this.authService.verifyDeviceOtp(userId, verifyOtpDto.code, ipAddress, deviceFingerprint);
-    return {
+    const result = await this.authService.verifyDeviceOtp(userId, verifyOtpDto.code, ipAddress, deviceFingerprint);
+    
+    // Set JWT as HTTP-only cookie
+    res.cookie('access_token', result.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    return res.json({
       message: 'Device verified successfully',
+    });
+  }
+
+  @Post('activate-account/:userId')
+  @HttpCode(HttpStatus.OK)
+  async activateAccount(
+    @Param('userId') userId: string,
+    @Body() activateAccountDto: ActivateAccountDto,
+    @Res() res: Response,
+  ) {
+    const result = await this.authService.activateAccount(userId, activateAccountDto);
+    
+    // Set JWT as HTTP-only cookie
+    if (result.token) {
+      res.cookie('access_token', result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+    }
+    
+    return res.json({
+      success: result.success,
+      message: result.message,
+    });
+  }
+
+  @Post('check-email')
+  @HttpCode(HttpStatus.OK)
+  async checkEmail(@Body() body: { email: string }) {
+    const exists = await this.authService.checkEmailExists(body.email);
+    return {
+      exists,
     };
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getCurrentUser(@Req() req: Request & { user?: any }) {
+    return {
+      user: req.user,
+    };
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(@Res() res: Response) {
+    // Clear the JWT cookie
+    res.clearCookie('access_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    });
+
+    return res.json({
+      message: 'Logged out successfully',
+    });
   }
 
   @Post('check-device/:userId')

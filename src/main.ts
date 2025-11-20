@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import cookieParser from 'cookie-parser';
 
 /**
  * Validate critical environment variables before application startup
@@ -53,6 +54,22 @@ async function bootstrap() {
 
   // Now create the actual application
   const app = await NestFactory.create(AppModule);
+  
+  // Enable cookie parser
+  app.use(cookieParser());
+  
+  // Enable CORS for frontend development
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  app.enableCors({
+    origin: [
+      'http://localhost:5173', // Vite dev server
+      'http://localhost:3000', // Alternative frontend port
+      frontendUrl,
+    ],
+    credentials: true, // Allow cookies to be sent
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Fingerprint'],
+  });
   
   // Enable validation pipe for class-validator
   app.useGlobalPipes(

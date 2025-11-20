@@ -14,7 +14,7 @@ enum UserRole {
 }
 
 model User {
-  id        BigInt   @id @default(autoincrement())
+  id        String   @id @default(uuid())
   role      UserRole @default(PROPERTY_MANAGER)
   email     String   @unique
   fullName  String
@@ -44,9 +44,9 @@ enum AuthProvider {
 }
 
 model UserAuthIdentity {
-  id             BigInt       @id @default(autoincrement())
+  id             String       @id @default(uuid())
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId         BigInt
+  userId         String
   provider       AuthProvider
   providerUserId String?
   passwordHash   String?
@@ -65,9 +65,9 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id              BigInt             @id @default(autoincrement())
+  id              String             @id @default(uuid())
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId          BigInt
+  userId          String
   planId          String
   status          SubscriptionStatus
   startDate       DateTime
@@ -90,7 +90,7 @@ enum PropertyStatus {
 }
 
 model Address {
-  id            BigInt  @id @default(autoincrement())
+  id            String  @id @default(uuid())
   streetAddress String
   city          String
   stateRegion   String
@@ -101,9 +101,9 @@ model Address {
 }
 
 model Property {
-  id            BigInt          @id @default(autoincrement())
+  id            String          @id @default(uuid())
   manager       User            @relation("ManagerProperties", fields: [managerId], references: [id])
-  managerId     BigInt
+  managerId     String
   propertyName  String
   yearBuilt     Int?
   mlsNumber     String?
@@ -112,7 +112,7 @@ model Property {
   marketRent    Decimal?
   depositAmount Decimal?
   address       Address?        @relation(fields: [addressId], references: [id])
-  addressId     BigInt?
+  addressId     String?
   description   String?
   status        PropertyStatus  @default(ACTIVE)
   createdAt     DateTime        @default(now())
@@ -125,9 +125,9 @@ enum OtpType {
 }
 
 model Otp {
-  id        BigInt   @id @default(autoincrement())
+  id        String   @id @default(uuid())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    BigInt
+  userId    String
   code      String
   type      OtpType
   expiresAt DateTime
@@ -139,9 +139,9 @@ model Otp {
 }
 
 model Device {
-  id            BigInt   @id @default(autoincrement())
+  id            String   @id @default(uuid())
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        BigInt
+  userId        String
   ipAddress     String
   userAgent     String?
   deviceFingerprint String?
