@@ -3,11 +3,13 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { JwtService } from './jwt.service';
 import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
 import * as argon2 from 'argon2';
 import { AuthProvider, UserRole, OtpType, SubscriptionStatus } from '@prisma/client';
 import { randomInt } from 'crypto';
@@ -105,11 +107,11 @@ export class AuthService {
    * Track device and IP address for a user
    */
   private async trackDevice(
-    userId: bigint,
+    userId: string,
     ipAddress: string,
     userAgent?: string,
     deviceFingerprint?: string,
-  ): Promise<{ isNewDevice: boolean; deviceId: bigint }> {
+  ): Promise<{ isNewDevice: boolean; deviceId: string }> {
     // Check if device already exists
     const existingDevice = await this.prisma.device.findFirst({
       where: {
@@ -146,7 +148,7 @@ export class AuthService {
    * Create and send OTP
    */
   private async createAndSendOtp(
-    userId: bigint,
+    userId: string,
     email: string,
     fullName: string,
     type: OtpType,
@@ -220,7 +222,10 @@ export class AuthService {
     // Note: Adjust this based on your subscription system
     // You might check a pre-registration subscription table or require subscription first
     const role = UserRole.PROPERTY_MANAGER; // Default role
-    if (role === UserRole.PROPERTY_MANAGER) {
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    
+    // Only check subscription in production, allow registration in development
+    if (role === UserRole.PROPERTY_MANAGER && nodeEnv === 'production') {
       const hasSubscription = await this.checkPropertyManagerSubscription(email);
       if (!hasSubscription) {
         throw new BadRequestException(
@@ -300,7 +305,7 @@ export class AuthService {
 
     // Return user data without sensitive information
     return {
-      id: createdUser.id.toString(),
+      id: createdUser.id,
       email: createdUser.email,
       fullName: createdUser.fullName,
       role: createdUser.role,
@@ -315,12 +320,11 @@ export class AuthService {
    * Verify email OTP
    */
   async verifyEmailOtp(userId: string, code: string): Promise<void> {
-    const userIdBigInt = BigInt(userId);
     const now = new Date();
 
     const otp = await this.prisma.otp.findFirst({
       where: {
-        userId: userIdBigInt,
+        userId: userId,
         code,
         type: OtpType.EMAIL_VERIFICATION,
         isUsed: false,
@@ -342,7 +346,7 @@ export class AuthService {
       });
 
       await tx.user.update({
-        where: { id: userIdBigInt },
+        where: { id: userId },
         data: { isEmailVerified: true },
       });
     });
@@ -357,12 +361,11 @@ export class AuthService {
     ipAddress: string,
     deviceFingerprint?: string,
   ): Promise<void> {
-    const userIdBigInt = BigInt(userId);
     const now = new Date();
 
     const otp = await this.prisma.otp.findFirst({
       where: {
-        userId: userIdBigInt,
+        userId: userId,
         code,
         type: OtpType.DEVICE_VERIFICATION,
         isUsed: false,
@@ -386,7 +389,7 @@ export class AuthService {
       // Update device matching both IP and fingerprint (consistent with trackDevice)
       await tx.device.updateMany({
         where: {
-          userId: userIdBigInt,
+          userId: userId,
           ipAddress,
           deviceFingerprint: deviceFingerprint || null,
         },
@@ -404,10 +407,8 @@ export class AuthService {
     userAgent?: string,
     deviceFingerprint?: string,
   ): Promise<{ requiresVerification: boolean; message: string }> {
-    const userIdBigInt = BigInt(userId);
-
     const user = await this.prisma.user.findUnique({
-      where: { id: userIdBigInt },
+      where: { id: userId },
       select: { email: true, fullName: true },
     });
 
@@ -416,7 +417,7 @@ export class AuthService {
     }
 
     const { isNewDevice } = await this.trackDevice(
-      userIdBigInt,
+      userId,
       ipAddress,
       userAgent,
       deviceFingerprint,
@@ -424,7 +425,7 @@ export class AuthService {
 
     if (isNewDevice) {
       await this.createAndSendOtp(
-        userIdBigInt,
+        userId,
         user.email,
         user.fullName,
         OtpType.DEVICE_VERIFICATION,
@@ -576,20 +577,168 @@ export class AuthService {
 
     // Generate JWT token
     const token = this.jwtService.sign({
-      userId: user.id.toString(),
+      userId: user.id,
       email: user.email,
       role: user.role,
     });
 
     return {
       user: {
-        id: user.id.toString(),
+        id: user.id,
         email: user.email,
         fullName: user.fullName,
         role: user.role,
         isEmailVerified: user.isEmailVerified,
         isActive: user.isActive,
       },
+      token,
+    };
+  }
+
+  /**
+   * Login with email and password
+   */
+  async login(
+    loginDto: LoginDto,
+    ipAddress: string,
+    userAgent?: string,
+    deviceFingerprint?: string,
+  ) {
+    const { email, password } = loginDto;
+
+    // Find user by email
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        authIdentities: {
+          where: {
+            provider: AuthProvider.EMAIL_PASSWORD,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // Check if user has EMAIL_PASSWORD auth identity
+    const emailPasswordIdentity = user.authIdentities.find(
+      (identity) => identity.provider === AuthProvider.EMAIL_PASSWORD,
+    );
+
+    if (!emailPasswordIdentity || !emailPasswordIdentity.passwordHash) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // Verify password
+    const isPasswordValid = await argon2.verify(
+      emailPasswordIdentity.passwordHash,
+      password,
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is not active. Please activate your account.');
+    }
+
+    // Check if user is property manager
+    if (user.role !== UserRole.PROPERTY_MANAGER) {
+      throw new UnauthorizedException('Access denied. Property manager account required.');
+    }
+
+    // Track device
+    await this.trackDevice(user.id, ipAddress, userAgent, deviceFingerprint);
+
+    // Update last login time
+    await this.prisma.userAuthIdentity.update({
+      where: { id: emailPasswordIdentity.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    // Generate JWT token
+    const token = this.jwtService.sign({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified,
+        isActive: user.isActive,
+      },
+      token,
+    };
+  }
+
+  /**
+   * Activate account with selected plan and create subscription
+   */
+  async activateAccount(userId: string, activateAccountDto: { planId: string; isYearly?: boolean }) {
+    const { planId, isYearly } = activateAccountDto;
+
+    // Find user
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Calculate subscription dates
+    const startDate = new Date();
+    const endDate = isYearly 
+      ? new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate())
+      : new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate());
+    
+    const nextBillingDate = isYearly
+      ? new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate())
+      : new Date(startDate.getFullYear(), startDate.getMonth() + 1, startDate.getDate());
+
+    // Create subscription and activate account in a transaction
+    await this.prisma.$transaction(async (tx) => {
+      // Create subscription with TRIALING status (14-day trial)
+      await tx.subscription.create({
+        data: {
+          userId: userId,
+          planId,
+          status: SubscriptionStatus.TRIALING,
+          startDate,
+          endDate,
+          nextBillingDate,
+        },
+      });
+
+      // Activate account and verify email
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          isActive: true,
+          isEmailVerified: true, // Auto-verify email when activating with plan
+        },
+      });
+    });
+
+    // Generate JWT token
+    const token = this.jwtService.sign({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    return {
+      success: true,
+      message: 'Account activated successfully. Your 14-day trial has started.',
       token,
     };
   }
