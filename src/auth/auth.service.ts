@@ -10,6 +10,7 @@ import { EmailService } from '../email/email.service';
 import { JwtService } from './jwt.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import * as argon2 from 'argon2';
 import { AuthProvider, UserRole, OtpType, SubscriptionStatus } from '@prisma/client';
 import { randomInt } from 'crypto';
@@ -598,8 +599,14 @@ export class AuthService {
     // If user doesn't exist, create new user
     if (!user) {
       // For property managers, check subscription before registration
+      // Note: OAuth signups should allow registration first, then select subscription
+      // Only check subscription in production for OAuth (similar to email registration)
       const role = UserRole.PROPERTY_MANAGER; // Default role
-      if (role === UserRole.PROPERTY_MANAGER) {
+      const nodeEnv = process.env.NODE_ENV || 'development';
+      
+      // Only check subscription in production, allow OAuth registration in development
+      // OAuth users will select subscription after completing profile
+      if (role === UserRole.PROPERTY_MANAGER && nodeEnv === 'production') {
         const hasSubscription = await this.checkPropertyManagerSubscription(email);
         if (!hasSubscription) {
           throw new BadRequestException(
@@ -903,6 +910,65 @@ export class AuthService {
       success: true,
       message: 'Account activated successfully. Please verify your email with the OTP sent to your inbox.',
       token,
+    };
+  }
+
+  /**
+   * Get user by ID
+   */
+  async getUserById(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
+  }
+
+  /**
+   * Update user profile (for OAuth users completing registration)
+   */
+  async updateProfile(userId: string, updateProfileDto: UpdateProfileDto) {
+    const { phoneCountryCode, phoneNumber, country, state, pincode, address } = updateProfileDto;
+
+    // Find user
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Update user profile
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        phoneCountryCode: phoneCountryCode || user.phoneCountryCode,
+        phoneNumber: phoneNumber || user.phoneNumber,
+        country: country || user.country,
+        state: state || user.state,
+        pincode: pincode || user.pincode,
+        address: address || user.address,
+      },
+    });
+
+    return {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      fullName: updatedUser.fullName,
+      role: updatedUser.role,
+      phoneCountryCode: updatedUser.phoneCountryCode,
+      phoneNumber: updatedUser.phoneNumber,
+      country: updatedUser.country,
+      state: updatedUser.state,
+      pincode: updatedUser.pincode,
+      address: updatedUser.address,
+      isEmailVerified: updatedUser.isEmailVerified,
+      isActive: updatedUser.isActive,
     };
   }
 }
