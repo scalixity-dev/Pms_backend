@@ -54,8 +54,18 @@ export class JwtAuthGuard implements CanActivate {
         throw new UnauthorizedException('User not found');
       }
 
-      if (!user.isActive) {
-        throw new UnauthorizedException('Account is not active');
+      // Get the route path to determine if checks should be skipped
+      // These endpoints are used during OAuth signup flow before account is fully activated
+      const url = request.url || '';
+      const isProfileUpdate = url.includes('/auth/profile') && request.method === 'PATCH';
+      const isGetCurrentUser = url.includes('/auth/me') && request.method === 'GET';
+
+      // Skip isActive and subscription checks for profile update and getCurrentUser endpoints
+      // These endpoints are used during OAuth signup flow before subscription is selected
+      if (!isProfileUpdate && !isGetCurrentUser) {
+        if (!user.isActive) {
+          throw new UnauthorizedException('Account is not active');
+        }
       }
 
       // Check if user is property manager
@@ -65,21 +75,24 @@ export class JwtAuthGuard implements CanActivate {
         );
       }
 
-      // Check if user has an active subscription
-      if (!user.subscriptions || user.subscriptions.length === 0) {
-        throw new UnauthorizedException(
-          'No active subscription found. Please activate your account.',
-        );
-      }
+      // Skip subscription check for profile update and getCurrentUser endpoints
+      if (!isProfileUpdate && !isGetCurrentUser) {
+        // Check if user has an active subscription
+        if (!user.subscriptions || user.subscriptions.length === 0) {
+          throw new UnauthorizedException(
+            'No active subscription found. Please activate your account.',
+          );
+        }
 
-      const subscription = user.subscriptions[0];
-      const now = new Date();
+        const subscription = user.subscriptions[0];
+        const now = new Date();
 
-      // Check if subscription is still valid
-      if (subscription.endDate && subscription.endDate < now) {
-        throw new UnauthorizedException(
-          'Subscription has expired. Please renew your subscription.',
-        );
+        // Check if subscription is still valid
+        if (subscription.endDate && subscription.endDate < now) {
+          throw new UnauthorizedException(
+            'Subscription has expired. Please renew your subscription.',
+          );
+        }
       }
 
       // Attach user to request
