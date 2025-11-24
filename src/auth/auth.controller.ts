@@ -7,8 +7,10 @@ import {
   Req,
   Param,
   Get,
+  Patch,
   UseGuards,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
@@ -28,6 +30,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ActivateAccountDto } from './dto/activate-account.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { FacebookStrategy } from './strategies/facebook.strategy';
 import { AppleStrategy } from './strategies/apple.strategy';
@@ -189,9 +192,47 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async getCurrentUser(@Req() req: Request & { user?: any }) {
+  async getCurrentUser(@Req() req: Request & { user?: { userId: string } }) {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
+    // Fetch full user data from database
+    const user = await this.authService.getUserById(userId);
     return {
-      user: req.user,
+      user: {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        fullName: user.fullName,
+        isEmailVerified: user.isEmailVerified,
+        isActive: user.isActive,
+        country: user.country,
+        address: user.address,
+        phoneNumber: user.phoneNumber,
+        phoneCountryCode: user.phoneCountryCode,
+        state: user.state,
+        pincode: user.pincode,
+      },
+    };
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @Req() req: Request & { user?: { userId: string } },
+    @Body() updateProfileDto: UpdateProfileDto,
+  ) {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
+    const updatedUser = await this.authService.updateProfile(userId, updateProfileDto);
+    return {
+      message: 'Profile updated successfully',
+      user: updatedUser,
     };
   }
 
@@ -232,7 +273,7 @@ export class AuthController {
   async googleAuthCallback(@Req() req: AuthenticatedRequest, @Res() res: Response) {
     const user = req.user;
     if (!user) {
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback?success=false&error=authentication_failed`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/callback?success=false&error=authentication_failed`);
     }
     const ipAddress = this.getIpAddress(req);
     const userAgent = this.getUserAgent(req);
@@ -257,7 +298,7 @@ export class AuthController {
     });
 
     // Redirect to frontend with success
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontendUrl}/auth/callback?success=true&userId=${result.user.id}`);
   }
 
@@ -273,7 +314,7 @@ export class AuthController {
   async facebookAuthCallback(@Req() req: AuthenticatedRequest, @Res() res: Response) {
     const user = req.user;
     if (!user) {
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback?success=false&error=authentication_failed`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/callback?success=false&error=authentication_failed`);
     }
     const ipAddress = this.getIpAddress(req);
     const userAgent = this.getUserAgent(req);
@@ -298,7 +339,7 @@ export class AuthController {
     });
 
     // Redirect to frontend with success
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontendUrl}/auth/callback?success=true&userId=${result.user.id}`);
   }
 
@@ -314,7 +355,7 @@ export class AuthController {
   async appleAuthCallback(@Req() req: AuthenticatedRequest, @Res() res: Response) {
     const user = req.user;
     if (!user) {
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback?success=false&error=authentication_failed`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/callback?success=false&error=authentication_failed`);
     }
     const ipAddress = this.getIpAddress(req);
     const userAgent = this.getUserAgent(req);
@@ -339,7 +380,7 @@ export class AuthController {
     });
 
     // Redirect to frontend with success
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontendUrl}/auth/callback?success=true&userId=${result.user.id}`);
   }
 }
