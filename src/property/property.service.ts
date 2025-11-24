@@ -13,6 +13,30 @@ type AmenitiesDataInput = {
   propertyAmenities?: string[];
 };
 
+const propertyRelationsInclude = {
+  manager: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+    },
+  },
+  address: true,
+  amenities: true,
+  photos: true,
+  attachments: true,
+  units: {
+    include: {
+      amenities: true,
+    },
+  },
+  singleUnitDetails: {
+    include: {
+      amenities: true,
+    },
+  },
+} as const;
+
 @Injectable()
 export class PropertyService {
   constructor(private readonly prisma: PrismaService) {}
@@ -191,61 +215,13 @@ export class PropertyService {
       where: {
         deletedAt: null,
       },
-      include: {
-        manager: {
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-          },
-        },
-        address: true,
-      },
+      include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
       orderBy: {
         createdAt: 'desc',
       },
     });
 
-    // Fetch related data for each property
-    const propertiesWithRelations = await Promise.all(
-      properties.map(async (property) => {
-        const [amenities, photos, attachments, units, singleUnitDetails] =
-          await Promise.all([
-            this.prisma.amenities.findFirst({
-              where: { propertyId: property.id },
-            }),
-            this.prisma.propertyPhoto.findMany({
-              where: { propertyId: property.id },
-            }),
-            this.prisma.propertyAttachment.findMany({
-              where: { propertyId: property.id },
-            }),
-            this.prisma.unit.findMany({
-              where: { propertyId: property.id },
-              include: {
-                amenities: true,
-              },
-            }),
-            this.prisma.singleUnitDetail.findUnique({
-              where: { propertyId: property.id },
-              include: {
-                amenities: true,
-              },
-            }),
-          ]);
-
-        return {
-          ...property,
-          amenities,
-          photos,
-          attachments,
-          units,
-          singleUnitDetails,
-        };
-      }),
-    );
-
-    return propertiesWithRelations;
+    return properties;
   }
 
   async findOne(id: string) {
@@ -254,56 +230,13 @@ export class PropertyService {
         id,
         deletedAt: null,
       },
-      include: {
-        manager: {
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-          },
-        },
-        address: true,
-      },
+      include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
     });
 
     if (!property) {
       throw new NotFoundException(`Property with ID ${id} not found`);
     }
-
-    // Fetch related data
-    const [amenities, photos, attachments, units, singleUnitDetails] =
-      await Promise.all([
-        this.prisma.amenities.findFirst({
-          where: { propertyId: property.id },
-        }),
-        this.prisma.propertyPhoto.findMany({
-          where: { propertyId: property.id },
-        }),
-        this.prisma.propertyAttachment.findMany({
-          where: { propertyId: property.id },
-        }),
-        this.prisma.unit.findMany({
-          where: { propertyId: property.id },
-          include: {
-            amenities: true,
-          },
-        }),
-        this.prisma.singleUnitDetail.findUnique({
-          where: { propertyId: property.id },
-          include: {
-            amenities: true,
-          },
-        }),
-      ]);
-
-    return {
-      ...property,
-      amenities,
-      photos,
-      attachments,
-      units,
-      singleUnitDetails,
-    };
+    return property;
   }
 
   async update(id: string, updatePropertyDto: UpdatePropertyDto) {

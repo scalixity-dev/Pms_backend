@@ -149,6 +149,11 @@ model Property {
   deletedAt     DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+  amenities     Amenities?      @relation("PropertyAmenities")
+  photos        PropertyPhoto[]
+  attachments   PropertyAttachment[]
+  units         Unit[]
+  singleUnitDetails SingleUnitDetail?
 
   @@index([deletedAt])
 }
@@ -190,12 +195,13 @@ model Device {
 
 model Amenities {
   id                String   @id @default(uuid())
-  propertyId        String?
+  propertyId        String?  @unique
   parking           ParkingType
   laundry           LaundryType
   airConditioning   AirConditioningType
   propertyFeatures  String[] @default([])
   propertyAmenities String[] @default([])
+  property          Property? @relation("PropertyAmenities", fields: [propertyId], references: [id], onDelete: Cascade)
 
   units            Unit[]
   singleUnitDetails SingleUnitDetail[]
@@ -210,6 +216,7 @@ model PropertyPhoto {
   photoUrl   String
   isPrimary  Boolean  @default(false)
   createdAt  DateTime @default(now())
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
   @@map("property_photos")
@@ -222,6 +229,7 @@ model PropertyAttachment {
   fileType    FileType
   description String?
   uploadedAt  DateTime @default(now())
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
   @@map("property_attachments")
@@ -238,6 +246,7 @@ model Unit {
   rent        Decimal?
   amenities   Amenities? @relation(fields: [amenitiesId], references: [id], onDelete: SetNull)
   amenitiesId String?
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
   @@map("units")
@@ -252,6 +261,7 @@ model SingleUnitDetail {
   deposit     Decimal?
   amenities   Amenities? @relation(fields: [amenitiesId], references: [id], onDelete: SetNull)
   amenitiesId String?
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@map("single_unit_details")
 }
