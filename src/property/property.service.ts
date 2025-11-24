@@ -83,15 +83,18 @@ export class PropertyService {
         yearBuilt: createPropertyDto.yearBuilt,
         mlsNumber: createPropertyDto.mlsNumber || null,
         propertyType: createPropertyDto.propertyType,
-        sizeSqft: createPropertyDto.sizeSqft
-          ? new Decimal(createPropertyDto.sizeSqft)
-          : null,
-        marketRent: createPropertyDto.marketRent
-          ? new Decimal(createPropertyDto.marketRent)
-          : null,
-        depositAmount: createPropertyDto.depositAmount
-          ? new Decimal(createPropertyDto.depositAmount)
-          : null,
+        sizeSqft:
+          createPropertyDto.sizeSqft !== undefined && createPropertyDto.sizeSqft !== null
+            ? new Decimal(createPropertyDto.sizeSqft)
+            : null,
+        marketRent:
+          createPropertyDto.marketRent !== undefined && createPropertyDto.marketRent !== null
+            ? new Decimal(createPropertyDto.marketRent)
+            : null,
+        depositAmount:
+          createPropertyDto.depositAmount !== undefined && createPropertyDto.depositAmount !== null
+            ? new Decimal(createPropertyDto.depositAmount)
+            : null,
         addressId: addressId,
         description: createPropertyDto.description,
         status: 'INACTIVE', // New properties are always created with INACTIVE status
