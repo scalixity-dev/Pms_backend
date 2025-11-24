@@ -194,8 +194,8 @@ model Amenities {
   parking           ParkingType
   laundry           LaundryType
   airConditioning   AirConditioningType
-  propertyFeatures  String?
-  propertyAmenities String?
+  propertyFeatures  String[] @default([])
+  propertyAmenities String[] @default([])
 
   units            Unit[]
   singleUnitDetails SingleUnitDetail[]

@@ -1,8 +1,17 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreatePropertyDto } from './dto/create-property.dto';
+import { Prisma } from '@prisma/client';
+import { CreateAmenitiesDto, CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { Decimal } from '@prisma/client/runtime/library';
+
+type AmenitiesDataInput = {
+  parking: CreateAmenitiesDto['parking'];
+  laundry: CreateAmenitiesDto['laundry'];
+  airConditioning: CreateAmenitiesDto['airConditioning'];
+  propertyFeatures?: string[];
+  propertyAmenities?: string[];
+};
 
 @Injectable()
 export class PropertyService {
@@ -76,16 +85,13 @@ export class PropertyService {
     });
 
     // Create property amenities if provided
-    if (createPropertyDto.amenities) {
+    const propertyAmenitiesData = this.buildAmenitiesData(createPropertyDto.amenities);
+    if (propertyAmenitiesData) {
       await this.prisma.amenities.create({
         data: {
+          ...propertyAmenitiesData,
           propertyId: property.id,
-          parking: createPropertyDto.amenities.parking,
-          laundry: createPropertyDto.amenities.laundry,
-          airConditioning: createPropertyDto.amenities.airConditioning,
-          propertyFeatures: createPropertyDto.amenities.propertyFeatures,
-          propertyAmenities: createPropertyDto.amenities.propertyAmenities,
-        },
+        } as unknown as Prisma.AmenitiesCreateInput,
       });
     }
 
@@ -118,15 +124,10 @@ export class PropertyService {
         let unitAmenitiesId: string | undefined;
         
         // Create unit amenities if provided
-        if (unit.amenities) {
+        const unitAmenitiesData = this.buildAmenitiesData(unit.amenities);
+        if (unitAmenitiesData) {
           const unitAmenities = await this.prisma.amenities.create({
-            data: {
-              parking: unit.amenities.parking,
-              laundry: unit.amenities.laundry,
-              airConditioning: unit.amenities.airConditioning,
-              propertyFeatures: unit.amenities.propertyFeatures,
-              propertyAmenities: unit.amenities.propertyAmenities,
-            },
+            data: unitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
           });
           unitAmenitiesId = unitAmenities.id;
         }
@@ -153,15 +154,12 @@ export class PropertyService {
       let singleUnitAmenitiesId: string | undefined;
 
       // Create single unit amenities if provided
-      if (createPropertyDto.singleUnitDetails.amenities) {
+      const singleUnitAmenitiesData = this.buildAmenitiesData(
+        createPropertyDto.singleUnitDetails.amenities,
+      );
+      if (singleUnitAmenitiesData) {
         const singleUnitAmenities = await this.prisma.amenities.create({
-          data: {
-            parking: createPropertyDto.singleUnitDetails.amenities.parking,
-            laundry: createPropertyDto.singleUnitDetails.amenities.laundry,
-            airConditioning: createPropertyDto.singleUnitDetails.amenities.airConditioning,
-            propertyFeatures: createPropertyDto.singleUnitDetails.amenities.propertyFeatures,
-            propertyAmenities: createPropertyDto.singleUnitDetails.amenities.propertyAmenities,
-          },
+          data: singleUnitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
         });
         singleUnitAmenitiesId = singleUnitAmenities.id;
       }
@@ -447,5 +445,27 @@ export class PropertyService {
       message: 'Property deleted successfully',
       property: deletedProperty,
     };
+  }
+
+  private buildAmenitiesData(amenities?: CreateAmenitiesDto) {
+    if (!amenities) {
+      return undefined;
+    }
+
+    const data: AmenitiesDataInput = {
+      parking: amenities.parking,
+      laundry: amenities.laundry,
+      airConditioning: amenities.airConditioning,
+    };
+
+    if (amenities.propertyFeatures !== undefined) {
+      data.propertyFeatures = amenities.propertyFeatures;
+    }
+
+    if (amenities.propertyAmenities !== undefined) {
+      data.propertyAmenities = amenities.propertyAmenities;
+    }
+
+    return data;
   }
 }

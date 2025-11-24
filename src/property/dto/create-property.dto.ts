@@ -69,13 +69,15 @@ export class CreateAmenitiesDto {
   @IsNotEmpty({ message: 'Air conditioning type is required' })
   airConditioning: AirConditioningType;
 
-  @IsString()
+  @IsArray()
+  @IsString({ each: true })
   @IsOptional()
-  propertyFeatures?: string;
+  propertyFeatures?: string[];
 
-  @IsString()
+  @IsArray()
+  @IsString({ each: true })
   @IsOptional()
-  propertyAmenities?: string;
+  propertyAmenities?: string[];
 }
 
 export class CreatePropertyPhotoDto {
