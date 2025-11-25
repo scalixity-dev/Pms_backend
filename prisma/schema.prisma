@@ -156,8 +156,8 @@ model Address {
   stateRegion   String
   zipCode       String
   country       String
-  property      Property? @relation("PropertyAddress", fields: [propertyId], references: [id], onDelete: Cascade)
-  propertyId    String?   @unique
+  propertyId    String   @unique
+  property      Property @relation("PropertyAddress", fields: [propertyId], references: [id], onDelete: Cascade)
 }
 
 model Property {
