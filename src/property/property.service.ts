@@ -35,6 +35,7 @@ const propertyRelationsInclude = {
       amenities: true,
     },
   },
+  leasing: true,
 } as const;
 
 @Injectable()
@@ -215,9 +216,6 @@ export class PropertyService {
 
   async findAll() {
     const properties = await this.prisma.property.findMany({
-      where: {
-        deletedAt: null,
-      },
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
       orderBy: {
         createdAt: 'desc',
@@ -228,11 +226,8 @@ export class PropertyService {
   }
 
   async findOne(id: string) {
-    const property = await this.prisma.property.findFirst({
-      where: {
-        id,
-        deletedAt: null,
-      },
+    const property = await this.prisma.property.findUnique({
+      where: { id },
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
     });
 
@@ -243,12 +238,9 @@ export class PropertyService {
   }
 
   async update(id: string, updatePropertyDto: UpdatePropertyDto) {
-    // Verify that the property exists and is not deleted
-    const existingProperty = await this.prisma.property.findFirst({
-      where: {
-        id,
-        deletedAt: null,
-      },
+    // Verify that the property exists
+    const existingProperty = await this.prisma.property.findUnique({
+      where: { id },
     });
 
     if (!existingProperty) {
@@ -346,25 +338,6 @@ export class PropertyService {
     // Verify that the property exists
     const existingProperty = await this.prisma.property.findUnique({
       where: { id },
-    });
-
-    if (!existingProperty) {
-      throw new NotFoundException(`Property with ID ${id} not found`);
-    }
-
-    // Check if already deleted (if deletedAt column exists)
-    if (existingProperty.deletedAt) {
-      throw new BadRequestException(`Property with ID ${id} is already deleted`);
-    }
-
-    // Soft delete the property by setting deletedAt
-    // If deletedAt column doesn't exist, this will throw an error
-    // User needs to run: npx prisma db push
-    const deletedProperty = await this.prisma.property.update({
-      where: { id },
-      data: {
-        deletedAt: new Date(),
-      },
       include: {
         manager: {
           select: {
@@ -377,9 +350,20 @@ export class PropertyService {
       },
     });
 
+    if (!existingProperty) {
+      throw new NotFoundException(`Property with ID ${id} not found`);
+    }
+
+    // Hard delete the property from the database
+    // Related records (amenities, photos, attachments, units, singleUnitDetails)
+    // will be automatically deleted due to cascade delete constraints
+    await this.prisma.property.delete({
+      where: { id },
+    });
+
     return {
       message: 'Property deleted successfully',
-      property: deletedProperty,
+      property: existingProperty,
     };
   }
 
