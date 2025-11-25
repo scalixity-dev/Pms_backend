@@ -86,6 +86,18 @@ export class PropertyService {
             : null,
         description: createPropertyDto.description,
         status: 'INACTIVE', // New properties are always created with INACTIVE status
+        // Create address if provided using nested create
+        ...(createPropertyDto.address && {
+          address: {
+            create: {
+              streetAddress: createPropertyDto.address.streetAddress,
+              city: createPropertyDto.address.city,
+              stateRegion: createPropertyDto.address.stateRegion,
+              zipCode: createPropertyDto.address.zipCode,
+              country: createPropertyDto.address.country,
+            },
+          },
+        }),
       },
       include: {
         manager: {
@@ -216,7 +228,7 @@ export class PropertyService {
   }
 
   async findAll() {
-    const properties = await this.prisma.property.findMany({
+    const properties = await this.prisma.property. findMany({
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
       orderBy: {
         createdAt: 'desc',
