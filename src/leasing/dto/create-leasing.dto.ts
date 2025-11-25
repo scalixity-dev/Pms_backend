@@ -42,7 +42,7 @@ export enum LeaseDuration {
 }
 
 export class CreateLeasingDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty({ message: 'Property ID is required' })
   propertyId: string;
 
