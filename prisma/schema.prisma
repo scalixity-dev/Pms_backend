@@ -2,7 +2,6 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -89,6 +88,38 @@ enum PropertyStatus {
   ARCHIVED
 }
 
+enum ParkingType {
+  NONE
+  STREET
+  GARAGE
+  DRIVEWAY
+  ASSIGNED
+}
+
+enum LaundryType {
+  NONE
+  IN_UNIT
+  ON_SITE
+  HOOKUPS
+}
+
+enum AirConditioningType {
+  NONE
+  CENTRAL
+  WINDOW
+  PORTABLE
+}
+
+enum FileType {
+  PDF
+  DOC
+  DOCX
+  XLS
+  XLSX
+  IMAGE
+  OTHER
+}
+
 model Address {
   id            String  @id @default(uuid())
   streetAddress String
@@ -115,8 +146,16 @@ model Property {
   addressId     String?
   description   String?
   status        PropertyStatus  @default(ACTIVE)
+  deletedAt     DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+  amenities     Amenities?      @relation("PropertyAmenities")
+  photos        PropertyPhoto[]
+  attachments   PropertyAttachment[]
+  units         Unit[]
+  singleUnitDetails SingleUnitDetail?
+
+  @@index([deletedAt])
 }
 
 enum OtpType {
@@ -152,4 +191,77 @@ model Device {
 
   @@unique([userId, ipAddress, deviceFingerprint])
   @@index([userId, isVerified])
+}
+
+model Amenities {
+  id                String   @id @default(uuid())
+  propertyId        String?  @unique
+  parking           ParkingType
+  laundry           LaundryType
+  airConditioning   AirConditioningType
+  propertyFeatures  String[] @default([])
+  propertyAmenities String[] @default([])
+  property          Property? @relation("PropertyAmenities", fields: [propertyId], references: [id], onDelete: Cascade)
+
+  units            Unit[]
+  singleUnitDetails SingleUnitDetail[]
+
+  @@index([propertyId])
+  @@map("amenities")
+}
+
+model PropertyPhoto {
+  id         String   @id @default(uuid())
+  propertyId String
+  photoUrl   String
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@map("property_photos")
+}
+
+model PropertyAttachment {
+  id          String   @id @default(uuid())
+  propertyId  String
+  fileUrl     String
+  fileType    FileType
+  description String?
+  uploadedAt  DateTime @default(now())
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@map("property_attachments")
+}
+
+model Unit {
+  id          String    @id @default(uuid())
+  propertyId  String
+  unitName    String
+  apartmentType String?
+  sizeSqft    Decimal?
+  beds        Int?
+  baths       Decimal?
+  rent        Decimal?
+  amenities   Amenities? @relation(fields: [amenitiesId], references: [id], onDelete: SetNull)
+  amenitiesId String?
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@map("units")
+}
+
+model SingleUnitDetail {
+  id          String    @id @default(uuid())
+  propertyId  String    @unique
+  beds        Int?
+  baths       Decimal?
+  marketRent  Decimal?
+  deposit     Decimal?
+  amenities   Amenities? @relation(fields: [amenitiesId], references: [id], onDelete: SetNull)
+  amenitiesId String?
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("single_unit_details")
 }

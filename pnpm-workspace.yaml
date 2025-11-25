@@ -1,0 +1,10 @@
+ignoredBuiltDependencies:
+  - '@nestjs/core'
+  - '@prisma/engines'
+  - '@scarf/scarf'
+  - argon2
+  - prisma
+  - unrs-resolver
+
+onlyBuiltDependencies:
+  - '@prisma/client'
