@@ -191,9 +191,10 @@ export class CreateAddressDto {
 }
 
 export class CreatePropertyDto {
+  // managerId is now extracted from authenticated user, not from request body
   @IsString()
-  @IsNotEmpty({ message: 'Manager ID is required' })
-  managerId: string;
+  @IsOptional()
+  managerId?: string;
 
   @IsString()
   @IsNotEmpty({ message: 'Property name is required' })
