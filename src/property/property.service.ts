@@ -61,21 +61,6 @@ export class PropertyService {
       throw new BadRequestException('MULTI property type cannot have single unit details');
     }
 
-    // Create address if provided
-    let addressId: string | undefined;
-    if (createPropertyDto.address) {
-      const address = await this.prisma.address.create({
-        data: {
-          streetAddress: createPropertyDto.address.streetAddress,
-          city: createPropertyDto.address.city,
-          stateRegion: createPropertyDto.address.stateRegion,
-          zipCode: createPropertyDto.address.zipCode,
-          country: createPropertyDto.address.country,
-        },
-      });
-      addressId = address.id;
-    }
-
     // Create the property
     const property = await this.prisma.property.create({
       data: {
@@ -96,9 +81,20 @@ export class PropertyService {
           createPropertyDto.depositAmount !== undefined && createPropertyDto.depositAmount !== null
             ? new Decimal(createPropertyDto.depositAmount)
             : null,
-        addressId: addressId,
         description: createPropertyDto.description,
         status: 'INACTIVE', // New properties are always created with INACTIVE status
+        // Create address if provided using nested create
+        ...(createPropertyDto.address && {
+          address: {
+            create: {
+              streetAddress: createPropertyDto.address.streetAddress,
+              city: createPropertyDto.address.city,
+              stateRegion: createPropertyDto.address.stateRegion,
+              zipCode: createPropertyDto.address.zipCode,
+              country: createPropertyDto.address.country,
+            },
+          },
+        }),
       },
       include: {
         manager: {
@@ -149,16 +145,8 @@ export class PropertyService {
     // Create units if provided (for MULTI properties)
     if (createPropertyDto.units?.length) {
       for (const unit of createPropertyDto.units) {
-        let unitAmenitiesId: string | undefined;
-        
-        // Create unit amenities if provided
+        // Build unit amenities data if provided
         const unitAmenitiesData = this.buildAmenitiesData(unit.amenities);
-        if (unitAmenitiesData) {
-          const unitAmenities = await this.prisma.amenities.create({
-            data: unitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
-          });
-          unitAmenitiesId = unitAmenities.id;
-        }
 
         await this.prisma.unit.create({
           data: {
@@ -171,7 +159,12 @@ export class PropertyService {
             beds: unit.beds,
             baths: unit.baths ? new Decimal(unit.baths) : null,
             rent: unit.rent ? new Decimal(unit.rent) : null,
-            amenitiesId: unitAmenitiesId,
+            // Create unit amenities if provided using nested create
+            ...(unitAmenitiesData && {
+              amenities: {
+                create: unitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
+              },
+            }),
           },
         });
       }
@@ -179,18 +172,10 @@ export class PropertyService {
 
     // Create single unit details if provided (for SINGLE properties)
     if (createPropertyDto.singleUnitDetails) {
-      let singleUnitAmenitiesId: string | undefined;
-
-      // Create single unit amenities if provided
+      // Build single unit amenities data if provided
       const singleUnitAmenitiesData = this.buildAmenitiesData(
         createPropertyDto.singleUnitDetails.amenities,
       );
-      if (singleUnitAmenitiesData) {
-        const singleUnitAmenities = await this.prisma.amenities.create({
-          data: singleUnitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
-        });
-        singleUnitAmenitiesId = singleUnitAmenities.id;
-      }
 
       await this.prisma.singleUnitDetail.create({
         data: {
@@ -205,7 +190,12 @@ export class PropertyService {
           deposit: createPropertyDto.singleUnitDetails.deposit
             ? new Decimal(createPropertyDto.singleUnitDetails.deposit)
             : null,
-          amenitiesId: singleUnitAmenitiesId,
+          // Create single unit amenities if provided using nested create
+          ...(singleUnitAmenitiesData && {
+            amenities: {
+              create: singleUnitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
+            },
+          }),
         },
       });
     }
@@ -215,7 +205,7 @@ export class PropertyService {
   }
 
   async findAll() {
-    const properties = await this.prisma.property.findMany({
+    const properties = await this.prisma.property. findMany({
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
       orderBy: {
         createdAt: 'desc',
@@ -258,33 +248,27 @@ export class PropertyService {
       }
     }
 
-    // Handle address update - create new address if provided
-    let addressId: string | undefined;
+    // Handle address update - use upsert to create or update address
+    let addressUpdateData: any = undefined;
     if (updatePropertyDto.address) {
-      // Get existing property to check if it has an address
-      const existingProperty = await this.prisma.property.findUnique({
-        where: { id },
-        select: { addressId: true },
-      });
-
-      // Create new address
-      const newAddress = await this.prisma.address.create({
-        data: {
-          streetAddress: updatePropertyDto.address.streetAddress,
-          city: updatePropertyDto.address.city,
-          stateRegion: updatePropertyDto.address.stateRegion,
-          zipCode: updatePropertyDto.address.zipCode,
-          country: updatePropertyDto.address.country,
+      addressUpdateData = {
+        upsert: {
+          create: {
+            streetAddress: updatePropertyDto.address.streetAddress,
+            city: updatePropertyDto.address.city,
+            stateRegion: updatePropertyDto.address.stateRegion,
+            zipCode: updatePropertyDto.address.zipCode,
+            country: updatePropertyDto.address.country,
+          },
+          update: {
+            streetAddress: updatePropertyDto.address.streetAddress,
+            city: updatePropertyDto.address.city,
+            stateRegion: updatePropertyDto.address.stateRegion,
+            zipCode: updatePropertyDto.address.zipCode,
+            country: updatePropertyDto.address.country,
+          },
         },
-      });
-      addressId = newAddress.id;
-
-      // Optionally delete old address if it existed (or you can keep it for history)
-      if (existingProperty?.addressId) {
-        await this.prisma.address.delete({
-          where: { id: existingProperty.addressId },
-        });
-      }
+      };
     }
 
     // Update the property
@@ -314,7 +298,7 @@ export class PropertyService {
               ? new Decimal(updatePropertyDto.depositAmount)
               : null,
         }),
-        ...(addressId && { addressId: addressId }),
+        ...(addressUpdateData && { address: addressUpdateData }),
         ...(updatePropertyDto.description !== undefined && { description: updatePropertyDto.description }),
         ...(updatePropertyDto.status !== undefined && { status: updatePropertyDto.status }),
       },

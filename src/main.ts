@@ -58,14 +58,24 @@ async function bootstrap() {
   // Enable cookie parser
   app.use(cookieParser());
   
-  // Enable CORS for frontend development
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  // Configure CORS based on environment
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const isProduction = nodeEnv === 'production';
+  
+  // Set allowed origins based on environment
+  const allowedOrigins = isProduction
+    ? [
+        'https://pms.scalixity.com', // Production frontend
+        process.env.FRONTEND_URL, // Allow override via env if needed
+      ].filter(Boolean) // Remove undefined values
+    : [
+        'http://localhost:5173', // Vite dev server
+        'http://localhost:3000', // Alternative frontend port
+        process.env.FRONTEND_URL || 'http://localhost:5173', // Allow override via env
+      ].filter(Boolean); // Remove undefined values
+  
   app.enableCors({
-    origin: [
-      'http://localhost:5173', // Vite dev server
-      'http://localhost:3000', // Alternative frontend port
-      frontendUrl,
-    ],
+    origin: allowedOrigins,
     credentials: true, // Allow cookies to be sent
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Fingerprint'],
@@ -80,6 +90,14 @@ async function bootstrap() {
     }),
   );
   
-  await app.listen(process.env.PORT ?? 3000);
+  // Set port based on environment: 5742 for production, 3000 for development
+  const port = process.env.PORT || (isProduction ? 5742 : 3000);
+  await app.listen(port);
+  
+  console.log(`🚀 Application is running on: http://localhost:${port}`);
+  console.log(`📦 Environment: ${nodeEnv}`);
+  if (isProduction) {
+    console.log(`🌐 Frontend URL: https://pms.scalixity.com`);
+  }
 }
 bootstrap();
