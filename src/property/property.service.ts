@@ -125,12 +125,9 @@ export class PropertyService {
       });
     }
 
-    // Create property amenities if provided (fallback to single unit amenities when absent)
-    const propertyAmenitiesSource =
-      createPropertyDto.amenities ?? createPropertyDto.singleUnitDetails?.amenities;
-
-    if (propertyAmenitiesSource) {
-      const propertyAmenitiesData = this.buildAmenitiesData(propertyAmenitiesSource, {
+    // Create property amenities if provided
+    if (createPropertyDto.amenities) {
+      const propertyAmenitiesData = this.buildAmenitiesData(createPropertyDto.amenities, {
         propertyId: property.id,
       });
 
