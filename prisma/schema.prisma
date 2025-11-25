@@ -120,6 +120,35 @@ enum FileType {
   OTHER
 }
 
+enum LeaseDuration {
+  ONE_MONTH
+  TWO_MONTHS
+  THREE_MONTHS
+  FOUR_MONTHS
+  FIVE_MONTHS
+  SIX_MONTHS
+  SEVEN_MONTHS
+  EIGHT_MONTHS
+  NINE_MONTHS
+  TEN_MONTHS
+  ELEVEN_MONTHS
+  TWELVE_MONTHS
+  THIRTEEN_MONTHS
+  FOURTEEN_MONTHS
+  FIFTEEN_MONTHS
+  SIXTEEN_MONTHS
+  SEVENTEEN_MONTHS
+  EIGHTEEN_MONTHS
+  NINETEEN_MONTHS
+  TWENTY_MONTHS
+  TWENTY_ONE_MONTHS
+  TWENTY_TWO_MONTHS
+  TWENTY_THREE_MONTHS
+  TWENTY_FOUR_MONTHS
+  THIRTY_SIX_PLUS_MONTHS
+  CONTACT_FOR_DETAILS
+}
+
 model Address {
   id            String  @id @default(uuid())
   streetAddress String
@@ -146,7 +175,6 @@ model Property {
   addressId     String?
   description   String?
   status        PropertyStatus  @default(ACTIVE)
-  deletedAt     DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   amenities     Amenities?      @relation("PropertyAmenities")
@@ -154,8 +182,7 @@ model Property {
   attachments   PropertyAttachment[]
   units         Unit[]
   singleUnitDetails SingleUnitDetail?
-
-  @@index([deletedAt])
+  leasing       PropertyLeasing?
 }
 
 enum OtpType {
@@ -264,4 +291,33 @@ model SingleUnitDetail {
   property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@map("single_unit_details")
+}
+
+model PropertyLeasing {
+  id                      String         @id @default(uuid())
+  property                Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId              String         @unique
+  monthlyRent             Decimal
+  securityDeposit         Decimal?
+  amountRefundable         Decimal?
+  dateAvailable           DateTime
+  minLeaseDuration        LeaseDuration
+  maxLeaseDuration        LeaseDuration
+  description             String?
+  petsAllowed             Boolean        @default(false)
+  petCategory             String[]       @default([])
+  petDeposit              Decimal?
+  petFee                  Decimal?
+  petDescription          String?
+  onlineRentalApplication Boolean        @default(false)
+  requireApplicationFee   Boolean        @default(false)
+  applicationFee          Decimal?
+  applicantName           String
+  applicantContact        String
+  applicantEmail          String
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  @@index([propertyId])
+  @@map("property_leasing")
 }
