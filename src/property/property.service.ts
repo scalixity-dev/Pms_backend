@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CreateAmenitiesDto, CreatePropertyDto } from './dto/create-property.dto';
@@ -45,14 +50,18 @@ const propertyRelationsInclude = {
 export class PropertyService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createPropertyDto: CreatePropertyDto) {
+  async create(createPropertyDto: CreatePropertyDto, userId: string) {
+    // Use the authenticated user's ID as managerId
+    // Ignore managerId from DTO if provided (security: users can only create properties for themselves)
+    const managerId = userId;
+
     // Verify that the manager exists
     const manager = await this.prisma.user.findUnique({
-      where: { id: createPropertyDto.managerId },
+      where: { id: managerId },
     });
 
     if (!manager) {
-      throw new NotFoundException(`Manager with ID ${createPropertyDto.managerId} not found`);
+      throw new NotFoundException(`Manager with ID ${managerId} not found`);
     }
 
     // Validate property type consistency
@@ -67,7 +76,7 @@ export class PropertyService {
     // Create the property
     const property = await this.prisma.property.create({
       data: {
-        managerId: createPropertyDto.managerId,
+        managerId: managerId,
         propertyName: createPropertyDto.propertyName,
         yearBuilt: createPropertyDto.yearBuilt,
         mlsNumber: createPropertyDto.mlsNumber || null,
@@ -221,11 +230,14 @@ export class PropertyService {
     }
 
     // Return property with all related data
-    return this.findOne(property.id);
+    return this.findOne(property.id, managerId);
   }
 
-  async findAll() {
-    const properties = await this.prisma.property. findMany({
+  async findAll(userId: string) {
+    const properties = await this.prisma.property.findMany({
+      where: {
+        managerId: userId,
+      },
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
       orderBy: {
         createdAt: 'desc',
@@ -235,7 +247,7 @@ export class PropertyService {
     return properties;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId: string) {
     const property = await this.prisma.property.findUnique({
       where: { id },
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
@@ -244,10 +256,16 @@ export class PropertyService {
     if (!property) {
       throw new NotFoundException(`Property with ID ${id} not found`);
     }
+
+    // Ensure the property belongs to the authenticated user
+    if (property.managerId !== userId) {
+      throw new ForbiddenException('You do not have permission to access this property');
+    }
+
     return property;
   }
 
-  async update(id: string, updatePropertyDto: UpdatePropertyDto) {
+  async update(id: string, updatePropertyDto: UpdatePropertyDto, userId: string) {
     // Verify that the property exists
     const existingProperty = await this.prisma.property.findUnique({
       where: { id },
@@ -257,19 +275,17 @@ export class PropertyService {
       throw new NotFoundException(`Property with ID ${id} not found`);
     }
 
-    // If managerId is being updated, verify that the manager exists
-    if (updatePropertyDto.managerId) {
-      const manager = await this.prisma.user.findUnique({
-        where: { id: updatePropertyDto.managerId },
-      });
-
-      if (!manager) {
-        throw new NotFoundException(`Manager with ID ${updatePropertyDto.managerId} not found`);
-      }
+    // Ensure the property belongs to the authenticated user
+    if (existingProperty.managerId !== userId) {
+      throw new ForbiddenException('You do not have permission to update this property');
     }
 
+    // Prevent users from changing the managerId (users can only manage their own properties)
+    // Remove managerId from update if provided
+    const { managerId, ...updateData } = updatePropertyDto;
+
     // Handle address update - create or update address if provided
-    if (updatePropertyDto.address) {
+    if (updateData.address) {
       const existingAddress = await this.prisma.address.findUnique({
         where: { propertyId: id },
       });
@@ -278,22 +294,22 @@ export class PropertyService {
         await this.prisma.address.update({
           where: { id: existingAddress.id },
           data: {
-            streetAddress: updatePropertyDto.address.streetAddress,
-            city: updatePropertyDto.address.city,
-            stateRegion: updatePropertyDto.address.stateRegion,
-            zipCode: updatePropertyDto.address.zipCode,
-            country: updatePropertyDto.address.country,
+            streetAddress: updateData.address.streetAddress,
+            city: updateData.address.city,
+            stateRegion: updateData.address.stateRegion,
+            zipCode: updateData.address.zipCode,
+            country: updateData.address.country,
           },
         });
       } else {
         await this.prisma.address.create({
           data: {
             propertyId: id,
-            streetAddress: updatePropertyDto.address.streetAddress,
-            city: updatePropertyDto.address.city,
-            stateRegion: updatePropertyDto.address.stateRegion,
-            zipCode: updatePropertyDto.address.zipCode,
-            country: updatePropertyDto.address.country,
+            streetAddress: updateData.address.streetAddress,
+            city: updateData.address.city,
+            stateRegion: updateData.address.stateRegion,
+            zipCode: updateData.address.zipCode,
+            country: updateData.address.country,
           },
         });
       }
@@ -303,31 +319,31 @@ export class PropertyService {
     const updatedProperty = await this.prisma.property.update({
       where: { id },
       data: {
-        ...(updatePropertyDto.managerId && { managerId: updatePropertyDto.managerId }),
-        ...(updatePropertyDto.propertyName && { propertyName: updatePropertyDto.propertyName }),
-        ...(updatePropertyDto.yearBuilt !== undefined && { yearBuilt: updatePropertyDto.yearBuilt }),
-        ...(updatePropertyDto.mlsNumber !== undefined && { mlsNumber: updatePropertyDto.mlsNumber }),
-        ...(updatePropertyDto.propertyType && { propertyType: updatePropertyDto.propertyType }),
-        ...(updatePropertyDto.sizeSqft !== undefined && {
+        // managerId is not updated - users can only manage their own properties
+        ...(updateData.propertyName && { propertyName: updateData.propertyName }),
+        ...(updateData.yearBuilt !== undefined && { yearBuilt: updateData.yearBuilt }),
+        ...(updateData.mlsNumber !== undefined && { mlsNumber: updateData.mlsNumber }),
+        ...(updateData.propertyType && { propertyType: updateData.propertyType }),
+        ...(updateData.sizeSqft !== undefined && {
           sizeSqft:
-            updatePropertyDto.sizeSqft !== null
-              ? new Decimal(updatePropertyDto.sizeSqft)
+            updateData.sizeSqft !== null
+              ? new Decimal(updateData.sizeSqft)
               : null,
         }),
-        ...(updatePropertyDto.marketRent !== undefined && {
+        ...(updateData.marketRent !== undefined && {
           marketRent:
-            updatePropertyDto.marketRent !== null
-              ? new Decimal(updatePropertyDto.marketRent)
+            updateData.marketRent !== null
+              ? new Decimal(updateData.marketRent)
               : null,
         }),
-        ...(updatePropertyDto.depositAmount !== undefined && {
+        ...(updateData.depositAmount !== undefined && {
           depositAmount:
-            updatePropertyDto.depositAmount !== null
-              ? new Decimal(updatePropertyDto.depositAmount)
+            updateData.depositAmount !== null
+              ? new Decimal(updateData.depositAmount)
               : null,
         }),
-        ...(updatePropertyDto.description !== undefined && { description: updatePropertyDto.description }),
-        ...(updatePropertyDto.status !== undefined && { status: updatePropertyDto.status }),
+        ...(updateData.description !== undefined && { description: updateData.description }),
+        ...(updateData.status !== undefined && { status: updateData.status }),
       },
       include: {
         manager: {
@@ -342,10 +358,10 @@ export class PropertyService {
     });
 
     // Return property with all related data
-    return this.findOne(id);
+    return this.findOne(id, userId);
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId: string) {
     // Verify that the property exists
     const existingProperty = await this.prisma.property.findUnique({
       where: { id },
@@ -363,6 +379,11 @@ export class PropertyService {
 
     if (!existingProperty) {
       throw new NotFoundException(`Property with ID ${id} not found`);
+    }
+
+    // Ensure the property belongs to the authenticated user
+    if (existingProperty.managerId !== userId) {
+      throw new ForbiddenException('You do not have permission to delete this property');
     }
 
     // Hard delete the property from the database

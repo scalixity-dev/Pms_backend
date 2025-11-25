@@ -9,6 +9,7 @@ import {
   IsEmail,
   IsDateString,
   Min,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
