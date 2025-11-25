@@ -215,7 +215,7 @@ export class PropertyService {
   }
 
   async findAll() {
-    const properties = await this.prisma.property.findMany({
+    const properties = await this.prisma.property. findMany({
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
       orderBy: {
         createdAt: 'desc',
