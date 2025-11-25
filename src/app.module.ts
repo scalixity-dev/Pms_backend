@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PropertyModule } from './property/property.module';
+import { LeasingModule } from './leasing/leasing.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PropertyModule } from './property/property.module';
     AuthModule,
     UsersModule,
     PropertyModule,
+    LeasingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

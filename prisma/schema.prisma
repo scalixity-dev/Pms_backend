@@ -150,14 +150,14 @@ enum LeaseDuration {
 }
 
 model Address {
-  id            String  @id @default(uuid())
+  id            String   @id @default(uuid())
   streetAddress String
   city          String
   stateRegion   String
   zipCode       String
   country       String
-
-  properties Property[]
+  propertyId    String   @unique
+  property      Property @relation("PropertyAddress", fields: [propertyId], references: [id], onDelete: Cascade)
 }
 
 model Property {
@@ -171,8 +171,7 @@ model Property {
   sizeSqft      Decimal?
   marketRent    Decimal?
   depositAmount Decimal?
-  address       Address?        @relation(fields: [addressId], references: [id])
-  addressId     String?
+  address       Address?        @relation("PropertyAddress")
   description   String?
   status        PropertyStatus  @default(ACTIVE)
   createdAt     DateTime        @default(now())
@@ -221,17 +220,18 @@ model Device {
 }
 
 model Amenities {
-  id                String   @id @default(uuid())
-  propertyId        String?  @unique
-  parking           ParkingType
-  laundry           LaundryType
-  airConditioning   AirConditioningType
-  propertyFeatures  String[] @default([])
-  propertyAmenities String[] @default([])
-  property          Property? @relation("PropertyAmenities", fields: [propertyId], references: [id], onDelete: Cascade)
-
-  units            Unit[]
-  singleUnitDetails SingleUnitDetail[]
+  id                  String           @id @default(uuid())
+  propertyId          String?          @unique
+  unitId              String?          @unique
+  singleUnitDetailId  String?          @unique
+  parking             ParkingType
+  laundry             LaundryType
+  airConditioning     AirConditioningType
+  propertyFeatures    String[]         @default([])
+  propertyAmenities   String[]         @default([])
+  property            Property?        @relation("PropertyAmenities", fields: [propertyId], references: [id], onDelete: Cascade)
+  unit                Unit?            @relation("UnitAmenities", fields: [unitId], references: [id], onDelete: Cascade)
+  singleUnitDetail    SingleUnitDetail? @relation("SingleUnitAmenities", fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
   @@map("amenities")
@@ -263,32 +263,30 @@ model PropertyAttachment {
 }
 
 model Unit {
-  id          String    @id @default(uuid())
-  propertyId  String
-  unitName    String
+  id            String     @id @default(uuid())
+  propertyId    String
+  unitName      String
   apartmentType String?
-  sizeSqft    Decimal?
-  beds        Int?
-  baths       Decimal?
-  rent        Decimal?
-  amenities   Amenities? @relation(fields: [amenitiesId], references: [id], onDelete: SetNull)
-  amenitiesId String?
-  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  sizeSqft      Decimal?
+  beds          Int?
+  baths         Decimal?
+  rent          Decimal?
+  amenities     Amenities? @relation("UnitAmenities")
+  property      Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
   @@map("units")
 }
 
 model SingleUnitDetail {
-  id          String    @id @default(uuid())
-  propertyId  String    @unique
-  beds        Int?
-  baths       Decimal?
-  marketRent  Decimal?
-  deposit     Decimal?
-  amenities   Amenities? @relation(fields: [amenitiesId], references: [id], onDelete: SetNull)
-  amenitiesId String?
-  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  id         String     @id @default(uuid())
+  propertyId String     @unique
+  beds       Int?
+  baths      Decimal?
+  marketRent Decimal?
+  deposit    Decimal?
+  amenities  Amenities? @relation("SingleUnitAmenities")
+  property   Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@map("single_unit_details")
 }
