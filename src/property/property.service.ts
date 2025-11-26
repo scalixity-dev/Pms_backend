@@ -43,7 +43,20 @@ const propertyRelationsInclude = {
       amenities: true,
     },
   },
-  leasing: true,
+  leasing: {
+    include: {
+      unit: {
+        include: {
+          amenities: true,
+        },
+      },
+      singleUnitDetail: {
+        include: {
+          amenities: true,
+        },
+      },
+    },
+  },
 } as const;
 
 @Injectable()

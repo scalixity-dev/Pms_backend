@@ -9,11 +9,36 @@ import { UpdateLeasingDto } from './dto/update-leasing.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 import { Prisma } from '@prisma/client';
 
+const leasingInclude = {
+  property: {
+    include: {
+      manager: {
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+        },
+      },
+      address: true,
+    },
+  },
+  unit: {
+    include: {
+      amenities: true,
+    },
+  },
+  singleUnitDetail: {
+    include: {
+      amenities: true,
+    },
+  },
+} as const;
+
 @Injectable()
 export class LeasingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createLeasingDto: CreateLeasingDto) {
+  async create(createLeasingDto: CreateLeasingDto, userId?: string) {
     // Verify that the property exists
     const property = await this.prisma.property.findUnique({
       where: { id: createLeasingDto.propertyId },
@@ -36,74 +61,87 @@ export class LeasingService {
       );
     }
 
-    // Create the leasing record
+    const propertyDetails = await this.prisma.property.findUnique({
+      where: { id: createLeasingDto.propertyId },
+      select: {
+        propertyType: true,
+        managerId: true,
+      },
+    });
+
+    if (!propertyDetails) {
+      throw new NotFoundException(`Property with ID ${createLeasingDto.propertyId} not found`);
+    }
+
+    if (userId && propertyDetails.managerId !== userId) {
+      throw new BadRequestException('You do not have permission to manage this property');
+    }
+
+    const association = await this.resolveAssociationTargets(
+      createLeasingDto.propertyId,
+      propertyDetails.propertyType,
+      createLeasingDto.unitId,
+      createLeasingDto.singleUnitDetailId,
+    );
+
+    const createData: Prisma.PropertyLeasingUncheckedCreateInput = {
+      propertyId: createLeasingDto.propertyId,
+      monthlyRent: new Decimal(createLeasingDto.monthlyRent),
+      securityDeposit: createLeasingDto.securityDeposit
+        ? new Decimal(createLeasingDto.securityDeposit)
+        : null,
+      amountRefundable: createLeasingDto.amountRefundable
+        ? new Decimal(createLeasingDto.amountRefundable)
+        : null,
+      dateAvailable: new Date(createLeasingDto.dateAvailable),
+      minLeaseDuration: createLeasingDto.minLeaseDuration,
+      maxLeaseDuration: createLeasingDto.maxLeaseDuration,
+      description: createLeasingDto.description,
+      petsAllowed: createLeasingDto.petsAllowed,
+      petCategory: createLeasingDto.petCategory ?? [],
+      petDeposit: createLeasingDto.petDeposit
+        ? new Decimal(createLeasingDto.petDeposit)
+        : null,
+      petFee: createLeasingDto.petFee
+        ? new Decimal(createLeasingDto.petFee)
+        : null,
+      petDescription: createLeasingDto.petDescription,
+      onlineRentalApplication: createLeasingDto.onlineRentalApplication,
+      requireApplicationFee: createLeasingDto.requireApplicationFee ?? false,
+      applicationFee: createLeasingDto.applicationFee
+        ? new Decimal(createLeasingDto.applicationFee)
+        : null,
+      applicantName: createLeasingDto.applicantName,
+      applicantContact: createLeasingDto.applicantContact,
+      applicantEmail: createLeasingDto.applicantEmail,
+    };
+
+    if (association.unitId) {
+      (createData as any).unitId = association.unitId;
+      (createData as any).singleUnitDetailId = null;
+    } else if (association.singleUnitDetailId) {
+      (createData as any).singleUnitDetailId = association.singleUnitDetailId;
+      (createData as any).unitId = null;
+    }
+
     const leasing = await this.prisma.propertyLeasing.create({
-      data: {
-        propertyId: createLeasingDto.propertyId,
-        monthlyRent: new Decimal(createLeasingDto.monthlyRent),
-        securityDeposit: createLeasingDto.securityDeposit
-          ? new Decimal(createLeasingDto.securityDeposit)
-          : null,
-        amountRefundable: createLeasingDto.amountRefundable
-          ? new Decimal(createLeasingDto.amountRefundable)
-          : null,
-        dateAvailable: new Date(createLeasingDto.dateAvailable),
-        minLeaseDuration: createLeasingDto.minLeaseDuration,
-        maxLeaseDuration: createLeasingDto.maxLeaseDuration,
-        description: createLeasingDto.description,
-        petsAllowed: createLeasingDto.petsAllowed,
-        petCategory: createLeasingDto.petCategory ?? [],
-        petDeposit: createLeasingDto.petDeposit
-          ? new Decimal(createLeasingDto.petDeposit)
-          : null,
-        petFee: createLeasingDto.petFee
-          ? new Decimal(createLeasingDto.petFee)
-          : null,
-        petDescription: createLeasingDto.petDescription,
-        onlineRentalApplication: createLeasingDto.onlineRentalApplication,
-        requireApplicationFee: createLeasingDto.requireApplicationFee ?? false,
-        applicationFee: createLeasingDto.applicationFee
-          ? new Decimal(createLeasingDto.applicationFee)
-          : null,
-        applicantName: createLeasingDto.applicantName,
-        applicantContact: createLeasingDto.applicantContact,
-        applicantEmail: createLeasingDto.applicantEmail,
-      },
-      include: {
-        property: {
-          include: {
-            manager: {
-              select: {
-                id: true,
-                email: true,
-                fullName: true,
-              },
-            },
-            address: true,
-          },
-        },
-      },
+      data: createData,
+      include: leasingInclude as Prisma.PropertyLeasingInclude,
     });
 
     return leasing;
   }
 
-  async findAll() {
+  async findAll(userId?: string) {
     const leasings = await this.prisma.propertyLeasing.findMany({
-      include: {
-        property: {
-          include: {
-            manager: {
-              select: {
-                id: true,
-                email: true,
-                fullName: true,
-              },
+      where: userId
+        ? {
+            property: {
+              managerId: userId,
             },
-            address: true,
-          },
-        },
-      },
+          }
+        : undefined,
+      include: leasingInclude as Prisma.PropertyLeasingInclude,
       orderBy: {
         createdAt: 'desc',
       },
@@ -112,49 +150,27 @@ export class LeasingService {
     return leasings;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     const leasing = await this.prisma.propertyLeasing.findUnique({
       where: { id },
-      include: {
-        property: {
-          include: {
-            manager: {
-              select: {
-                id: true,
-                email: true,
-                fullName: true,
-              },
-            },
-            address: true,
-          },
-        },
-      },
+      include: leasingInclude as Prisma.PropertyLeasingInclude,
     });
 
     if (!leasing) {
       throw new NotFoundException(`Leasing with ID ${id} not found`);
     }
 
+    if (userId && leasing.property.managerId !== userId) {
+      throw new BadRequestException('You do not have permission to access this leasing');
+    }
+
     return leasing;
   }
 
-  async findByPropertyId(propertyId: string) {
+  async findByPropertyId(propertyId: string, userId?: string) {
     const leasing = await this.prisma.propertyLeasing.findUnique({
       where: { propertyId },
-      include: {
-        property: {
-          include: {
-            manager: {
-              select: {
-                id: true,
-                email: true,
-                fullName: true,
-              },
-            },
-            address: true,
-          },
-        },
-      },
+      include: leasingInclude as Prisma.PropertyLeasingInclude,
     });
 
     if (!leasing) {
@@ -163,20 +179,30 @@ export class LeasingService {
       );
     }
 
+    if (userId && leasing.property.managerId !== userId) {
+      throw new BadRequestException('You do not have permission to access this leasing');
+    }
+
     return leasing;
   }
 
-  async update(id: string, updateLeasingDto: UpdateLeasingDto) {
+  async update(id: string, updateLeasingDto: UpdateLeasingDto, userId?: string) {
     // Verify that the leasing exists
-    const existingLeasing = await this.prisma.propertyLeasing.findUnique({
+    const existingLeasing = (await this.prisma.propertyLeasing.findUnique({
       where: { id },
-    });
+    })) as {
+      unitId: string | null;
+      singleUnitDetailId: string | null;
+      propertyId: string;
+    } | null;
 
     if (!existingLeasing) {
       throw new NotFoundException(`Leasing with ID ${id} not found`);
     }
 
     // If propertyId is being updated, verify that the property exists
+    const targetPropertyId = updateLeasingDto.propertyId ?? existingLeasing.propertyId;
+
     if (updateLeasingDto.propertyId) {
       const property = await this.prisma.property.findUnique({
         where: { id: updateLeasingDto.propertyId },
@@ -200,8 +226,31 @@ export class LeasingService {
       }
     }
 
+    const propertyDetails = await this.prisma.property.findUnique({
+      where: { id: targetPropertyId },
+      select: {
+        propertyType: true,
+        managerId: true,
+      },
+    });
+
+    if (!propertyDetails) {
+      throw new NotFoundException(`Property with ID ${targetPropertyId} not found`);
+    }
+
+    if (userId && propertyDetails.managerId !== userId) {
+      throw new BadRequestException('You do not have permission to manage this property');
+    }
+
+    const association = await this.resolveAssociationTargets(
+      targetPropertyId,
+      propertyDetails.propertyType,
+      updateLeasingDto.unitId ?? existingLeasing.unitId ?? undefined,
+      updateLeasingDto.singleUnitDetailId ?? existingLeasing.singleUnitDetailId ?? undefined,
+    );
+
     // Build update data
-    const updateData: Prisma.PropertyLeasingUpdateInput = {};
+    const updateData: Prisma.PropertyLeasingUncheckedUpdateInput = {};
 
     if (updateLeasingDto.monthlyRent !== undefined) {
       updateData.monthlyRent = new Decimal(updateLeasingDto.monthlyRent);
@@ -292,56 +341,40 @@ export class LeasingService {
     }
 
     if (updateLeasingDto.propertyId !== undefined) {
-      updateData.property = {
-        connect: { id: updateLeasingDto.propertyId },
-      };
+      updateData.propertyId = updateLeasingDto.propertyId;
+    }
+
+    if (association.unitId) {
+      (updateData as any).unitId = association.unitId;
+      (updateData as any).singleUnitDetailId = null;
+    } else if (association.singleUnitDetailId) {
+      (updateData as any).singleUnitDetailId = association.singleUnitDetailId;
+      (updateData as any).unitId = null;
     }
 
     // Update the leasing
     const updatedLeasing = await this.prisma.propertyLeasing.update({
       where: { id },
       data: updateData,
-      include: {
-        property: {
-          include: {
-            manager: {
-              select: {
-                id: true,
-                email: true,
-                fullName: true,
-              },
-            },
-            address: true,
-          },
-        },
-      },
+      include: leasingInclude as Prisma.PropertyLeasingInclude,
     });
 
     return updatedLeasing;
   }
 
-  async remove(id: string) {
+  async remove(id: string, userId?: string) {
     // Verify that the leasing exists
     const existingLeasing = await this.prisma.propertyLeasing.findUnique({
       where: { id },
-      include: {
-        property: {
-          include: {
-            manager: {
-              select: {
-                id: true,
-                email: true,
-                fullName: true,
-              },
-            },
-            address: true,
-          },
-        },
-      },
+      include: leasingInclude as Prisma.PropertyLeasingInclude,
     });
 
     if (!existingLeasing) {
       throw new NotFoundException(`Leasing with ID ${id} not found`);
+    }
+
+    if (userId && existingLeasing.property.managerId !== userId) {
+      throw new BadRequestException('You do not have permission to delete this leasing');
     }
 
     // Delete the leasing
@@ -353,5 +386,58 @@ export class LeasingService {
       message: 'Leasing deleted successfully',
       leasing: existingLeasing,
     };
+  }
+
+  private async resolveAssociationTargets(
+    propertyId: string,
+    propertyType: 'SINGLE' | 'MULTI',
+    unitId?: string,
+    singleUnitDetailId?: string,
+  ): Promise<{ unitId?: string; singleUnitDetailId?: string }> {
+    if (propertyType === 'MULTI') {
+      if (!unitId) {
+        throw new BadRequestException('unitId is required for MULTI properties');
+      }
+
+      const unit = await this.prisma.unit.findUnique({
+        where: { id: unitId },
+      });
+
+      if (!unit || unit.propertyId !== propertyId) {
+        throw new BadRequestException(
+          `Unit ${unitId} does not belong to property with ID ${propertyId}`,
+        );
+      }
+
+      return { unitId: unit.id };
+    }
+
+    let resolvedSingleUnitDetailId = singleUnitDetailId;
+
+    if (resolvedSingleUnitDetailId) {
+      const singleUnitDetail = await this.prisma.singleUnitDetail.findUnique({
+        where: { id: resolvedSingleUnitDetailId },
+      });
+
+      if (!singleUnitDetail || singleUnitDetail.propertyId !== propertyId) {
+        throw new BadRequestException(
+          `Single unit detail ${resolvedSingleUnitDetailId} does not belong to property with ID ${propertyId}`,
+        );
+      }
+    } else {
+      const singleUnitDetail = await this.prisma.singleUnitDetail.findUnique({
+        where: { propertyId },
+      });
+
+      if (!singleUnitDetail) {
+        throw new BadRequestException(
+          `Single unit details not found for property with ID ${propertyId}`,
+        );
+      }
+
+      resolvedSingleUnitDetailId = singleUnitDetail.id;
+    }
+
+    return { singleUnitDetailId: resolvedSingleUnitDetailId };
   }
 }
