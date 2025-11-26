@@ -20,6 +20,16 @@ export class UploadFileDto {
   description?: string;
 }
 
+export class UploadImageDto {
+  @IsString()
+  @IsOptional()
+  propertyId?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+}
+
 export class DeleteFileDto {
   @IsString()
   @IsNotEmpty({ message: 'File URL is required' })

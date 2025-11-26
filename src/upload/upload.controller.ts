@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Delete,
+  Get,
   Body,
   UseInterceptors,
   UploadedFile,
@@ -15,7 +16,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import { UploadService } from './upload.service';
-import { UploadFileDto, DeleteFileDto, FileCategory } from './dto/upload-file.dto';
+import { UploadFileDto, DeleteFileDto, FileCategory, UploadImageDto } from './dto/upload-file.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileType } from '@prisma/client';
@@ -144,7 +145,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file'))
   async uploadImage(
     @UploadedFile() file: { buffer: Buffer; mimetype: string; originalname: string; size: number } | undefined,
-    @Body() uploadFileDto: UploadFileDto,
+    @Body() uploadImageDto: UploadImageDto,
     @Req() req: AuthenticatedRequest,
   ) {
     const userId = req.user?.userId;
@@ -161,14 +162,14 @@ export class UploadController {
       file,
       FileCategory.IMAGE,
       userId,
-      uploadFileDto.propertyId,
+      uploadImageDto.propertyId,
     );
 
     // If propertyId is provided, save to PropertyPhoto
-    if (uploadFileDto.propertyId) {
+    if (uploadImageDto.propertyId) {
       const photo = await this.prisma.propertyPhoto.create({
         data: {
-          propertyId: uploadFileDto.propertyId,
+          propertyId: uploadImageDto.propertyId,
           photoUrl: url,
           isPrimary: false,
         },
@@ -228,6 +229,23 @@ export class UploadController {
     return {
       message: 'File deleted successfully',
     };
+  }
+
+  @Get('test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testConnection(@Req() req: AuthenticatedRequest) {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
+    const result = await this.uploadService.testConnection();
+    
+    if (!result.success) {
+      throw new BadRequestException(result.message);
+    }
+
+    return result;
   }
 }
 

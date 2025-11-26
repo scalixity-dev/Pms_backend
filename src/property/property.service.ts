@@ -329,6 +329,43 @@ export class PropertyService {
       }
     }
 
+    // Handle photos update if provided
+    if (updateData.photos?.length) {
+      // First, set all existing photos to not primary
+      await this.prisma.propertyPhoto.updateMany({
+        where: { propertyId: id },
+        data: { isPrimary: false },
+      });
+
+      // Then, create or update photos
+      for (const photo of updateData.photos) {
+        // Check if photo with this URL already exists
+        const existingPhoto = await this.prisma.propertyPhoto.findFirst({
+          where: {
+            propertyId: id,
+            photoUrl: photo.photoUrl,
+          },
+        });
+
+        if (existingPhoto) {
+          // Update existing photo
+          await this.prisma.propertyPhoto.update({
+            where: { id: existingPhoto.id },
+            data: { isPrimary: photo.isPrimary || false },
+          });
+        } else {
+          // Create new photo
+          await this.prisma.propertyPhoto.create({
+            data: {
+              propertyId: id,
+              photoUrl: photo.photoUrl,
+              isPrimary: photo.isPrimary || false,
+            },
+          });
+        }
+      }
+    }
+
     // Update the property
     const updatedProperty = await this.prisma.property.update({
       where: { id },
