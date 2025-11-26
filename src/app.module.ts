@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PropertyModule } from './property/property.module';
 import { LeasingModule } from './leasing/leasing.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { LeasingModule } from './leasing/leasing.module';
     UsersModule,
     PropertyModule,
     LeasingModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [AppService],

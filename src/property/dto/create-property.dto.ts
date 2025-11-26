@@ -237,6 +237,16 @@ export class CreatePropertyDto {
   @IsOptional()
   description?: string;
 
+  @IsString()
+  @IsOptional()
+  @IsUrl({}, { message: 'Cover photo URL must be a valid URL' })
+  coverPhotoUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsUrl({}, { message: 'YouTube URL must be a valid URL' })
+  youtubeUrl?: string;
+
   @IsEnum(PropertyStatus, {
     message: 'Status must be ACTIVE, INACTIVE, or ARCHIVED',
   })

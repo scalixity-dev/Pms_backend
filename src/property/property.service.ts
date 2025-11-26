@@ -107,6 +107,8 @@ export class PropertyService {
             ? new Decimal(createPropertyDto.depositAmount)
             : null,
         description: createPropertyDto.description,
+        coverPhotoUrl: createPropertyDto.coverPhotoUrl || null,
+        youtubeUrl: createPropertyDto.youtubeUrl || null,
         status: 'INACTIVE', // New properties are always created with INACTIVE status
         // Create address if provided using nested create
         ...(createPropertyDto.address && {
@@ -132,20 +134,6 @@ export class PropertyService {
         address: true,
       },
     });
-
-    // Create address if provided
-    if (createPropertyDto.address) {
-      await this.prisma.address.create({
-        data: {
-          propertyId: property.id,
-          streetAddress: createPropertyDto.address.streetAddress,
-          city: createPropertyDto.address.city,
-          stateRegion: createPropertyDto.address.stateRegion,
-          zipCode: createPropertyDto.address.zipCode,
-          country: createPropertyDto.address.country,
-        },
-      });
-    }
 
     // Create property amenities if provided
     if (createPropertyDto.amenities) {
@@ -328,6 +316,69 @@ export class PropertyService {
       }
     }
 
+    // Handle amenities update if provided
+    if (updateData.amenities) {
+      const existingAmenities = await this.prisma.amenities.findUnique({
+        where: { propertyId: id },
+      });
+
+      const amenitiesData = this.buildAmenitiesData(updateData.amenities, {
+        propertyId: id,
+      });
+
+      if (existingAmenities) {
+        // Update existing amenities
+        await this.prisma.amenities.update({
+          where: { id: existingAmenities.id },
+          data: amenitiesData as unknown as Prisma.AmenitiesUpdateInput,
+        });
+      } else {
+        // Create new amenities if they don't exist
+        if (amenitiesData) {
+          await this.prisma.amenities.create({
+            data: amenitiesData as unknown as Prisma.AmenitiesCreateInput,
+          });
+        }
+      }
+    }
+
+    // Handle photos update if provided
+    if (updateData.photos?.length) {
+      // First, set all existing photos to not primary
+      await this.prisma.propertyPhoto.updateMany({
+        where: { propertyId: id },
+        data: { isPrimary: false },
+      });
+
+      // Then, create or update photos
+      for (const photo of updateData.photos) {
+        // Check if photo with this URL already exists
+        const existingPhoto = await this.prisma.propertyPhoto.findFirst({
+          where: {
+            propertyId: id,
+            photoUrl: photo.photoUrl,
+          },
+        });
+
+        if (existingPhoto) {
+          // Update existing photo
+          await this.prisma.propertyPhoto.update({
+            where: { id: existingPhoto.id },
+            data: { isPrimary: photo.isPrimary || false },
+          });
+        } else {
+          // Create new photo
+          await this.prisma.propertyPhoto.create({
+            data: {
+              propertyId: id,
+              photoUrl: photo.photoUrl,
+              isPrimary: photo.isPrimary || false,
+            },
+          });
+        }
+      }
+    }
+
     // Update the property
     const updatedProperty = await this.prisma.property.update({
       where: { id },
@@ -356,6 +407,8 @@ export class PropertyService {
               : null,
         }),
         ...(updateData.description !== undefined && { description: updateData.description }),
+        ...(updateData.coverPhotoUrl !== undefined && { coverPhotoUrl: updateData.coverPhotoUrl }),
+        ...(updateData.youtubeUrl !== undefined && { youtubeUrl: updateData.youtubeUrl || null }),
         ...(updateData.status !== undefined && { status: updateData.status }),
       },
       include: {
