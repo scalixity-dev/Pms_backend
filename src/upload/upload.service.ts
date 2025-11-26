@@ -90,8 +90,11 @@ export class UploadService implements OnModuleInit {
       
       // AWS returns null/empty string for us-east-1, or the region name
       const location = response.LocationConstraint;
-      if (!location || location === 'EU') {
+      if (!location) {
         return 'us-east-1';
+      }
+      if (location === 'EU') {
+        return 'eu-west-1';
       }
       return location as string;
     } catch (error: any) {
