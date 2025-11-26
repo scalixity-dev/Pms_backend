@@ -178,7 +178,7 @@ model Property {
   depositAmount Decimal?
   address       Address?        @relation("PropertyAddress")
   description   String?
-  coverPhotoUrl String
+  coverPhotoUrl String?
   youtubeUrl    String?
   status        PropertyStatus  @default(ACTIVE)
   createdAt     DateTime        @default(now())

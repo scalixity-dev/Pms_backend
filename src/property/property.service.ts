@@ -94,7 +94,7 @@ export class PropertyService {
             ? new Decimal(createPropertyDto.depositAmount)
             : null,
         description: createPropertyDto.description,
-        coverPhotoUrl: createPropertyDto.coverPhotoUrl,
+        coverPhotoUrl: createPropertyDto.coverPhotoUrl || null,
         youtubeUrl: createPropertyDto.youtubeUrl || null,
         status: 'INACTIVE', // New properties are always created with INACTIVE status
         // Create address if provided using nested create

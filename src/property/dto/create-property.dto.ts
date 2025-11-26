@@ -238,9 +238,9 @@ export class CreatePropertyDto {
   description?: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'Cover photo URL is required' })
+  @IsOptional()
   @IsUrl({}, { message: 'Cover photo URL must be a valid URL' })
-  coverPhotoUrl: string;
+  coverPhotoUrl?: string;
 
   @IsString()
   @IsOptional()
