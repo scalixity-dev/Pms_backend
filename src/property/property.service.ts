@@ -120,20 +120,6 @@ export class PropertyService {
       },
     });
 
-    // Create address if provided
-    if (createPropertyDto.address) {
-      await this.prisma.address.create({
-        data: {
-          propertyId: property.id,
-          streetAddress: createPropertyDto.address.streetAddress,
-          city: createPropertyDto.address.city,
-          stateRegion: createPropertyDto.address.stateRegion,
-          zipCode: createPropertyDto.address.zipCode,
-          country: createPropertyDto.address.country,
-        },
-      });
-    }
-
     // Create property amenities if provided
     if (createPropertyDto.amenities) {
       const propertyAmenitiesData = this.buildAmenitiesData(createPropertyDto.amenities, {
@@ -312,6 +298,32 @@ export class PropertyService {
             country: updateData.address.country,
           },
         });
+      }
+    }
+
+    // Handle amenities update if provided
+    if (updateData.amenities) {
+      const existingAmenities = await this.prisma.amenities.findUnique({
+        where: { propertyId: id },
+      });
+
+      const amenitiesData = this.buildAmenitiesData(updateData.amenities, {
+        propertyId: id,
+      });
+
+      if (existingAmenities) {
+        // Update existing amenities
+        await this.prisma.amenities.update({
+          where: { id: existingAmenities.id },
+          data: amenitiesData as unknown as Prisma.AmenitiesUpdateInput,
+        });
+      } else {
+        // Create new amenities if they don't exist
+        if (amenitiesData) {
+          await this.prisma.amenities.create({
+            data: amenitiesData as unknown as Prisma.AmenitiesCreateInput,
+          });
+        }
       }
     }
 
