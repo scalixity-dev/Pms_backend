@@ -79,12 +79,6 @@ export class UploadController {
       uploadFileDto.propertyId,
     );
 
-    // Map FileCategory to Prisma FileType enum
-    const fileTypeMap: Record<FileCategory, FileType> = {
-      [FileCategory.IMAGE]: FileType.IMAGE,
-      [FileCategory.VIDEO]: FileType.OTHER, // Video not in enum, use OTHER
-      [FileCategory.DOCUMENT]: FileType.PDF, // Default to PDF, can be enhanced
-    };
 
     // If propertyId is provided, save to PropertyAttachment
     if (uploadFileDto.propertyId) {
