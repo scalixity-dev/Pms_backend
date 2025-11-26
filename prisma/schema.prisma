@@ -33,6 +33,8 @@ model User {
   properties     Property[] @relation("ManagerProperties")
   devices        Device[]
   otps           Otp[]
+  // TODO: Temporary relation - will be replaced with proper Tenant model later
+  currentListings Listing[] @relation("CurrentTenantListings")
 }
 
 enum AuthProvider {
@@ -358,8 +360,9 @@ model Listing {
   unitId           String?
 
   
+  // TODO: Temporary relation - will be replaced with proper Tenant model later
   // If the property currently has a tenant, optionally link to them
-  currentTenant    User?            @relation(fields: [currentTenantId], references: [id], onDelete: SetNull)
+  currentTenant    User?            @relation("CurrentTenantListings", fields: [currentTenantId], references: [id], onDelete: SetNull)
   currentTenantId  String?
 
   listingType      ListingType      @default(ENTIRE_PROPERTY)
