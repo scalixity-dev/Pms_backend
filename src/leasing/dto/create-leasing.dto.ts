@@ -47,6 +47,14 @@ export class CreateLeasingDto {
   @IsNotEmpty({ message: 'Property ID is required' })
   propertyId: string;
 
+  @IsUUID()
+  @IsOptional()
+  unitId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  singleUnitDetailId?: string;
+
   @IsNumber()
   @IsNotEmpty({ message: 'Monthly rent is required' })
   @Min(0, { message: 'Monthly rent must be a positive number' })

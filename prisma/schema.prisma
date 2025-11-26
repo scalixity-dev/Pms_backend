@@ -277,6 +277,7 @@ model Unit {
   amenities     Amenities? @relation("UnitAmenities")
   property      Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   listings      Listing[]
+  leasing       PropertyLeasing? @relation("UnitLeasing")
   @@index([propertyId])
   @@map("units")
 }
@@ -290,6 +291,7 @@ model SingleUnitDetail {
   deposit    Decimal?
   amenities  Amenities? @relation("SingleUnitAmenities")
   property   Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  leasing    PropertyLeasing? @relation("SingleUnitDetailLeasing")
 
   @@map("single_unit_details")
 }
@@ -298,6 +300,10 @@ model PropertyLeasing {
   id                      String         @id @default(uuid())
   property                Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   propertyId              String         @unique
+  unit                    Unit?          @relation("UnitLeasing", fields: [unitId], references: [id], onDelete: Cascade)
+  unitId                  String?        @unique
+  singleUnitDetail        SingleUnitDetail? @relation("SingleUnitDetailLeasing", fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  singleUnitDetailId      String?        @unique
   monthlyRent             Decimal
   securityDeposit         Decimal?
   amountRefundable         Decimal?
@@ -320,6 +326,8 @@ model PropertyLeasing {
   updatedAt               DateTime       @updatedAt
 
   @@index([propertyId])
+  @@index([unitId])
+  @@index([singleUnitDetailId])
   @@map("property_leasing")
 }
 
