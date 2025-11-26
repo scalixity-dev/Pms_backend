@@ -87,30 +87,40 @@ export class LeasingService {
     const createData: Prisma.PropertyLeasingUncheckedCreateInput = {
       propertyId: createLeasingDto.propertyId,
       monthlyRent: new Decimal(createLeasingDto.monthlyRent),
-      securityDeposit: createLeasingDto.securityDeposit
-        ? new Decimal(createLeasingDto.securityDeposit)
-        : null,
-      amountRefundable: createLeasingDto.amountRefundable
-        ? new Decimal(createLeasingDto.amountRefundable)
-        : null,
+      securityDeposit:
+        createLeasingDto.securityDeposit !== undefined &&
+        createLeasingDto.securityDeposit !== null
+          ? new Decimal(createLeasingDto.securityDeposit)
+          : null,
+      amountRefundable:
+        createLeasingDto.amountRefundable !== undefined &&
+        createLeasingDto.amountRefundable !== null
+          ? new Decimal(createLeasingDto.amountRefundable)
+          : null,
       dateAvailable: new Date(createLeasingDto.dateAvailable),
       minLeaseDuration: createLeasingDto.minLeaseDuration,
       maxLeaseDuration: createLeasingDto.maxLeaseDuration,
       description: createLeasingDto.description,
       petsAllowed: createLeasingDto.petsAllowed,
       petCategory: createLeasingDto.petCategory ?? [],
-      petDeposit: createLeasingDto.petDeposit
-        ? new Decimal(createLeasingDto.petDeposit)
-        : null,
-      petFee: createLeasingDto.petFee
-        ? new Decimal(createLeasingDto.petFee)
-        : null,
+      petDeposit:
+        createLeasingDto.petDeposit !== undefined &&
+        createLeasingDto.petDeposit !== null
+          ? new Decimal(createLeasingDto.petDeposit)
+          : null,
+      petFee:
+        createLeasingDto.petFee !== undefined &&
+        createLeasingDto.petFee !== null
+          ? new Decimal(createLeasingDto.petFee)
+          : null,
       petDescription: createLeasingDto.petDescription,
       onlineRentalApplication: createLeasingDto.onlineRentalApplication,
       requireApplicationFee: createLeasingDto.requireApplicationFee ?? false,
-      applicationFee: createLeasingDto.applicationFee
-        ? new Decimal(createLeasingDto.applicationFee)
-        : null,
+      applicationFee:
+        createLeasingDto.applicationFee !== undefined &&
+        createLeasingDto.applicationFee !== null
+          ? new Decimal(createLeasingDto.applicationFee)
+          : null,
       applicantName: createLeasingDto.applicantName,
       applicantContact: createLeasingDto.applicantContact,
       applicantEmail: createLeasingDto.applicantEmail,
