@@ -157,6 +157,14 @@ export class UploadController {
       throw new BadRequestException('No file provided');
     }
 
+    // Validate file size (10MB for images)
+    const maxImageSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxImageSize) {
+      throw new BadRequestException(
+        `File size exceeds maximum allowed size of 10MB for images`,
+      );
+    }
+
     // Upload as image
     const { url, key } = await this.uploadService.uploadFile(
       file,
@@ -201,24 +209,42 @@ export class UploadController {
       throw new UnauthorizedException('User not authenticated');
     }
 
+    // Look up PropertyAttachment with property relation to verify ownership
+    const attachment = await this.prisma.propertyAttachment.findFirst({
+      where: { fileUrl: deleteFileDto.fileUrl },
+      include: { property: true },
+    });
+
+    // Look up PropertyPhoto with property relation to verify ownership
+    const photo = await this.prisma.propertyPhoto.findFirst({
+      where: { photoUrl: deleteFileDto.fileUrl },
+      include: { property: true },
+    });
+
+    // Verify ownership: check if the file is associated with a property owned by the user
+    if (attachment) {
+      if (attachment.property.managerId !== userId) {
+        throw new UnauthorizedException('You do not have permission to delete this file');
+      }
+    } else if (photo) {
+      if (photo.property.managerId !== userId) {
+        throw new UnauthorizedException('You do not have permission to delete this file');
+      }
+    } else {
+      // File not found in database - deny deletion for security
+      throw new UnauthorizedException('File not found or you do not have permission to delete this file');
+    }
+
+    // Authorization passed - proceed with deletion
     // Delete from S3
     await this.uploadService.deleteFile(deleteFileDto.fileUrl);
 
-    // Delete from database if it exists in PropertyAttachment
-    const attachment = await this.prisma.propertyAttachment.findFirst({
-      where: { fileUrl: deleteFileDto.fileUrl },
-    });
-
+    // Delete from database
     if (attachment) {
       await this.prisma.propertyAttachment.delete({
         where: { id: attachment.id },
       });
     }
-
-    // Delete from database if it exists in PropertyPhoto
-    const photo = await this.prisma.propertyPhoto.findFirst({
-      where: { photoUrl: deleteFileDto.fileUrl },
-    });
 
     if (photo) {
       await this.prisma.propertyPhoto.delete({
