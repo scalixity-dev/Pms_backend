@@ -466,7 +466,7 @@ export class UploadService implements OnModuleInit {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      console.error('Error deleting file from S3:', error);
+      this.logger.error('Error deleting file from S3:', error);
       throw new InternalServerErrorException('Failed to delete file from S3');
     }
   }
