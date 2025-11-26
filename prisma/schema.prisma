@@ -182,6 +182,7 @@ model Property {
   units         Unit[]
   singleUnitDetails SingleUnitDetail?
   leasing       PropertyLeasing?
+  listings      Listing[]
 }
 
 enum OtpType {
@@ -273,7 +274,7 @@ model Unit {
   rent          Decimal?
   amenities     Amenities? @relation("UnitAmenities")
   property      Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-
+  listings      Listing[]
   @@index([propertyId])
   @@map("units")
 }
@@ -318,4 +319,90 @@ model PropertyLeasing {
 
   @@index([propertyId])
   @@map("property_leasing")
+}
+
+enum ListingType {
+  ENTIRE_PROPERTY
+  UNIT
+}
+
+enum OccupancyStatus {
+  VACANT
+  OCCUPIED
+  PARTIALLY_OCCUPIED
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  EXPIRED
+  ARCHIVED
+  REMOVED
+}
+
+enum ListingVisibility {
+  PUBLIC
+  PRIVATE
+  UNLISTED
+}
+
+model Listing {
+  id               String           @id @default(uuid())
+  property         Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId       String
+
+  // If the listing is for a specific unit (for multi-unit properties),
+  // unitId will be set; otherwise null for whole-property listings.
+  unit             Unit?            @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId           String?
+
+  
+  // If the property currently has a tenant, optionally link to them
+  currentTenant    User?            @relation(fields: [currentTenantId], references: [id], onDelete: SetNull)
+  currentTenantId  String?
+
+  listingType      ListingType      @default(ENTIRE_PROPERTY)
+  listingStatus    ListingStatus    @default(DRAFT)
+  occupancyStatus  OccupancyStatus  @default(VACANT)
+  visibility       ListingVisibility @default(PUBLIC)
+
+  // Pricing / leasing fields (optional; copy from PropertyLeasing if needed)
+  listingPrice     Decimal?
+  monthlyRent      Decimal?
+  securityDeposit  Decimal?
+  amountRefundable Decimal?
+
+  // Lease duration bounds (use your existing enum)
+  minLeaseDuration LeaseDuration?
+  maxLeaseDuration LeaseDuration?
+
+  // Availability & lifecycle dates
+  listedAt         DateTime         @default(now())
+  availableFrom    DateTime?
+  expiresAt        DateTime?
+  archivedAt       DateTime?
+  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime         @default(now())
+
+  // Visibility / meta
+  isActive         Boolean          @default(true)
+  petsAllowed      Boolean          @default(false)
+  petCategory      String[]         @default([])
+  applicationFee   Decimal?
+  onlineApplicationAvailable Boolean @default(false)
+
+  // External metadata
+  externalListingUrl String?
+  source             String?         // e.g., "MANUAL", "IMPORT", "API"
+
+  // Free-form description or overrides for what appears on the listing
+  title             String?
+  description       String?
+
+  @@index([propertyId])
+  @@index([unitId])
+  @@index([listingStatus])
+  @@index([occupancyStatus])
+  @@map("listings")
 }
