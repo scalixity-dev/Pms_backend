@@ -127,16 +127,4 @@ export class CreateLeasingDto {
   @Min(0, { message: 'Application fee must be a positive number' })
   @Type(() => Number)
   applicationFee?: number;
-
-  @IsString()
-  @IsNotEmpty({ message: 'Applicant name is required' })
-  applicantName: string;
-
-  @IsString()
-  @IsNotEmpty({ message: 'Applicant contact is required' })
-  applicantContact: string;
-
-  @IsEmail({}, { message: 'Applicant email must be a valid email address' })
-  @IsNotEmpty({ message: 'Applicant email is required' })
-  applicantEmail: string;
 }
