@@ -148,6 +148,12 @@ enum ResidenceType {
   OWN
 }
 
+enum RibbonType {
+  NONE
+  CHAT
+  CUSTOM
+}
+
 
 // --- CORE MODELS ---
 model User {
@@ -262,6 +268,8 @@ model Property {
   coverPhotoUrl     String?
   // Retained youtubeUrl from the first schema
   youtubeUrl        String?
+  ribbonType        RibbonType             @default(NONE)
+  ribbonTitle       String?
   address           Address?               @relation("PropertyAddress")
   description       String?
   status            PropertyStatus         @default(ACTIVE)

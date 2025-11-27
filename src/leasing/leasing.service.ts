@@ -121,9 +121,6 @@ export class LeasingService {
         createLeasingDto.applicationFee !== null
           ? new Decimal(createLeasingDto.applicationFee)
           : null,
-      applicantName: createLeasingDto.applicantName,
-      applicantContact: createLeasingDto.applicantContact,
-      applicantEmail: createLeasingDto.applicantEmail,
     };
 
     if (association.unitId) {
@@ -336,18 +333,6 @@ export class LeasingService {
         updateLeasingDto.applicationFee !== null
           ? new Decimal(updateLeasingDto.applicationFee)
           : null;
-    }
-
-    if (updateLeasingDto.applicantName !== undefined) {
-      updateData.applicantName = updateLeasingDto.applicantName;
-    }
-
-    if (updateLeasingDto.applicantContact !== undefined) {
-      updateData.applicantContact = updateLeasingDto.applicantContact;
-    }
-
-    if (updateLeasingDto.applicantEmail !== undefined) {
-      updateData.applicantEmail = updateLeasingDto.applicantEmail;
     }
 
     if (updateLeasingDto.propertyId !== undefined) {

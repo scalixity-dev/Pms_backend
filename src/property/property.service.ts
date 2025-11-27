@@ -109,6 +109,8 @@ export class PropertyService {
         description: createPropertyDto.description,
         coverPhotoUrl: createPropertyDto.coverPhotoUrl || null,
         youtubeUrl: createPropertyDto.youtubeUrl || null,
+        ribbonType: createPropertyDto.ribbonType || 'NONE',
+        ribbonTitle: createPropertyDto.ribbonTitle || null,
         status: 'INACTIVE', // New properties are always created with INACTIVE status
         // Create address if provided using nested create
         ...(createPropertyDto.address && {
@@ -409,6 +411,8 @@ export class PropertyService {
         ...(updateData.description !== undefined && { description: updateData.description }),
         ...(updateData.coverPhotoUrl !== undefined && { coverPhotoUrl: updateData.coverPhotoUrl }),
         ...(updateData.youtubeUrl !== undefined && { youtubeUrl: updateData.youtubeUrl || null }),
+        ...(updateData.ribbonType !== undefined && { ribbonType: updateData.ribbonType }),
+        ...(updateData.ribbonTitle !== undefined && { ribbonTitle: updateData.ribbonTitle || null }),
         ...(updateData.status !== undefined && { status: updateData.status }),
       },
       include: {
