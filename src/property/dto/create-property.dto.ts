@@ -24,6 +24,12 @@ export enum PropertyStatus {
   ARCHIVED = 'ARCHIVED',
 }
 
+export enum RibbonType {
+  NONE = 'NONE',
+  CHAT = 'CHAT',
+  CUSTOM = 'CUSTOM',
+}
+
 export enum ParkingType {
   NONE = 'NONE',
   STREET = 'STREET',
@@ -246,6 +252,16 @@ export class CreatePropertyDto {
   @IsOptional()
   @IsUrl({}, { message: 'YouTube URL must be a valid URL' })
   youtubeUrl?: string;
+
+  @IsEnum(RibbonType, {
+    message: 'Ribbon type must be NONE, CHAT, or CUSTOM',
+  })
+  @IsOptional()
+  ribbonType?: RibbonType;
+
+  @IsString()
+  @IsOptional()
+  ribbonTitle?: string;
 
   @IsEnum(PropertyStatus, {
     message: 'Status must be ACTIVE, INACTIVE, or ARCHIVED',
