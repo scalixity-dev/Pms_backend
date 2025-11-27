@@ -111,6 +111,11 @@ export class PropertyService {
         youtubeUrl: createPropertyDto.youtubeUrl || null,
         ribbonType: createPropertyDto.ribbonType || 'NONE',
         ribbonTitle: createPropertyDto.ribbonTitle || null,
+        listingContactName: createPropertyDto.listingContactName || null,
+        listingPhoneCountryCode: createPropertyDto.listingPhoneCountryCode || null,
+        listingPhoneNumber: createPropertyDto.listingPhoneNumber || null,
+        listingEmail: createPropertyDto.listingEmail || null,
+        displayPhonePublicly: createPropertyDto.displayPhonePublicly ?? false,
         status: 'INACTIVE', // New properties are always created with INACTIVE status
         // Create address if provided using nested create
         ...(createPropertyDto.address && {
@@ -413,6 +418,11 @@ export class PropertyService {
         ...(updateData.youtubeUrl !== undefined && { youtubeUrl: updateData.youtubeUrl || null }),
         ...(updateData.ribbonType !== undefined && { ribbonType: updateData.ribbonType }),
         ...(updateData.ribbonTitle !== undefined && { ribbonTitle: updateData.ribbonTitle || null }),
+        ...(updateData.listingContactName !== undefined && { listingContactName: updateData.listingContactName || null }),
+        ...(updateData.listingPhoneCountryCode !== undefined && { listingPhoneCountryCode: updateData.listingPhoneCountryCode || null }),
+        ...(updateData.listingPhoneNumber !== undefined && { listingPhoneNumber: updateData.listingPhoneNumber || null }),
+        ...(updateData.listingEmail !== undefined && { listingEmail: updateData.listingEmail || null }),
+        ...(updateData.displayPhonePublicly !== undefined && { displayPhonePublicly: updateData.displayPhonePublicly }),
         ...(updateData.status !== undefined && { status: updateData.status }),
       },
       include: {
