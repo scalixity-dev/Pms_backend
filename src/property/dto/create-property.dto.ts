@@ -10,6 +10,7 @@ import {
   ValidateNested,
   IsBoolean,
   IsUrl,
+  IsEmail,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -262,6 +263,27 @@ export class CreatePropertyDto {
   @IsString()
   @IsOptional()
   ribbonTitle?: string;
+
+  @IsString()
+  @IsOptional()
+  listingContactName?: string;
+
+  @IsString()
+  @IsOptional()
+  listingPhoneCountryCode?: string;
+
+  @IsString()
+  @IsOptional()
+  listingPhoneNumber?: string;
+
+  @IsString()
+  @IsEmail({}, { message: 'Listing email must be a valid email address' })
+  @IsOptional()
+  listingEmail?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  displayPhonePublicly?: boolean;
 
   @IsEnum(PropertyStatus, {
     message: 'Status must be ACTIVE, INACTIVE, or ARCHIVED',
