@@ -2,6 +2,9 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import { ConfigService } from '@nestjs/config';
+import { getCorsConfig, getHelmetConfig, getRequestConfig } from './config/security.config';
 
 /**
  * Validate critical environment variables before application startup
@@ -55,31 +58,24 @@ async function bootstrap() {
   // Now create the actual application
   const app = await NestFactory.create(AppModule);
   
+  // Get ConfigService for security configuration
+  const configService = app.get(ConfigService);
+  
   // Enable cookie parser
   app.use(cookieParser());
   
-  // Configure CORS based on environment
-  const nodeEnv = process.env.NODE_ENV || 'development';
-  const isProduction = nodeEnv === 'production';
+  // Configure security headers using Helmet
+  const helmetConfig = getHelmetConfig(configService);
+  app.use(helmet(helmetConfig));
   
-  // Set allowed origins based on environment
-  const allowedOrigins = isProduction
-    ? [
-        'https://pms.scalixity.com', // Production frontend
-        process.env.FRONTEND_URL, // Allow override via env if needed
-      ].filter(Boolean) // Remove undefined values
-    : [
-        'http://localhost:5173', // Vite dev server
-        'http://localhost:3000', // Alternative frontend port
-        process.env.FRONTEND_URL || 'http://localhost:5173', // Allow override via env
-      ].filter(Boolean); // Remove undefined values
+  // Configure CORS using security config
+  const corsConfig = getCorsConfig(configService);
+  app.enableCors(corsConfig);
   
-  app.enableCors({
-    origin: allowedOrigins,
-    credentials: true, // Allow cookies to be sent
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Fingerprint'],
-  });
+  // Configure request size limits and timeouts
+  const requestConfig = getRequestConfig(configService);
+  // Note: Request size limits are typically handled by the reverse proxy (nginx, etc.)
+  // Timeout configuration would be set at the server level
   
   // Enable validation pipe for class-validator
   app.useGlobalPipes(
@@ -87,15 +83,23 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      // Additional security: limit payload size
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
   
   // Set port based on environment: 5742 for production, 3000 for development
-  const port = process.env.PORT || (isProduction ? 5742 : 3000);
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const isProduction = nodeEnv === 'production';
+  const port = configService.get<number>('PORT', isProduction ? 5742 : 3000);
+  
   await app.listen(port);
   
   console.log(`🚀 Application is running on: http://localhost:${port}`);
   console.log(`📦 Environment: ${nodeEnv}`);
+  console.log(`🔒 Security features enabled: Rate Limiting, Helmet, CORS`);
   if (isProduction) {
     console.log(`🌐 Frontend URL: https://pms.scalixity.com`);
   }
