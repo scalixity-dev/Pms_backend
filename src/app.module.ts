@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { PropertyModule } from './property/property.module';
 import { LeasingModule } from './leasing/leasing.module';
 import { UploadModule } from './upload/upload.module';
+import { ApplicationModule } from './application/application.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { UploadModule } from './upload/upload.module';
     PropertyModule,
     LeasingModule,
     UploadModule,
+    ApplicationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
