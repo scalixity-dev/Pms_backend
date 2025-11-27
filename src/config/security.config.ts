@@ -1,5 +1,6 @@
 import { ThrottlerModuleOptions } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
+import type { HelmetOptions } from 'helmet';
 
 /**
  * Security Configuration
@@ -22,23 +23,7 @@ export interface SecurityConfig {
     exposedHeaders: string[];
     maxAge: number;
   };
-  helmet: {
-    enabled: boolean;
-    contentSecurityPolicy: boolean;
-    crossOriginEmbedderPolicy: boolean;
-    crossOriginOpenerPolicy: boolean;
-    crossOriginResourcePolicy: boolean;
-    dnsPrefetchControl: boolean;
-    frameguard: boolean;
-    hidePoweredBy: boolean;
-    hsts: boolean;
-    ieNoOpen: boolean;
-    noSniff: boolean;
-    originAgentCluster: boolean;
-    permittedCrossDomainPolicies: boolean;
-    referrerPolicy: boolean;
-    xssFilter: boolean;
-  };
+  helmet: HelmetOptions;
   request: {
     maxSize: string;
     timeout: number;
@@ -125,7 +110,7 @@ export function getCorsConfig(configService: ConfigService) {
 /**
  * Get Helmet security headers configuration
  */
-export function getHelmetConfig(configService: ConfigService) {
+export function getHelmetConfig(configService: ConfigService): HelmetOptions {
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
 
@@ -195,7 +180,7 @@ export function getSecurityConfig(configService: ConfigService): SecurityConfig 
   return {
     rateLimit: getRateLimitConfig(configService),
     cors: getCorsConfig(configService),
-    helmet: getHelmetConfig(configService) as any,
+    helmet: getHelmetConfig(configService),
     request: getRequestConfig(configService),
     api: getApiConfig(configService),
   };
