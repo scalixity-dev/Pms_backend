@@ -12,6 +12,7 @@ import {
   IsNumber,
   Min,
   IsInt,
+  ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -314,7 +315,8 @@ export class CreateApplicationDto {
   invitedById?: string;
 
   @IsEnum(ApplicationStatus, {
-    message: 'Status must be DRAFT, SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, or WITHDRAWN',
+    message:
+      'Status must be DRAFT, SUBMITTED, UNDER_REVIEW, APPROVED, REJECTED, or WITHDRAWN',
   })
   @IsOptional()
   status?: ApplicationStatus;
@@ -334,7 +336,7 @@ export class CreateApplicationDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateApplicantDto)
-  @IsNotEmpty({ message: 'At least one applicant is required' })
+  @ArrayMinSize(1, { message: 'At least one applicant is required' })
   applicants: CreateApplicantDto[];
 
   @IsArray()

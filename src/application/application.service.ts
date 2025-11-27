@@ -99,7 +99,7 @@ export class ApplicationService {
 
     // Ensure at least one applicant is marked as primary
     const hasPrimary = createApplicationDto.applicants.some(
-      (app) => app.isPrimary !== false,
+      (app) => app.isPrimary === true,
     );
     if (!hasPrimary) {
       createApplicationDto.applicants[0].isPrimary = true;
@@ -374,11 +374,21 @@ export class ApplicationService {
     if (updateApplicationDto.leasingId) {
       const leasing = await this.prisma.propertyLeasing.findUnique({
         where: { id: updateApplicationDto.leasingId },
+        include: {
+          property: {
+            select: { managerId: true },
+          },
+        },
       });
 
       if (!leasing) {
         throw new NotFoundException(
           `Leasing with ID ${updateApplicationDto.leasingId} not found`,
+        );
+      }
+      if (userId && leasing.property.managerId !== userId) {
+        throw new ForbiddenException(
+          'You do not have permission to move this application to that leasing',
         );
       }
     }
