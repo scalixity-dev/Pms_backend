@@ -9,12 +9,14 @@ import { PropertyModule } from './property/property.module';
 import { LeasingModule } from './leasing/leasing.module';
 import { UploadModule } from './upload/upload.module';
 import { ApplicationModule } from './application/application.module';
+import { SecurityModule } from './config/security.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    SecurityModule,
     PrismaModule,
     AuthModule,
     UsersModule,
