@@ -16,9 +16,6 @@ export class Leasing {
   onlineRentalApplication: boolean;
   requireApplicationFee: boolean;
   applicationFee?: number;
-  applicantName: string;
-  applicantContact: string;
-  applicantEmail: string;
   createdAt: Date;
   updatedAt: Date;
 }
