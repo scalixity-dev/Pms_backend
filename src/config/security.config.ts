@@ -42,32 +42,51 @@ export interface SecurityConfig {
 export function getRateLimitConfig(configService: ConfigService): ThrottlerModuleOptions {
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const isProduction = nodeEnv === 'production';
+  
+  // Check if rate limiting is disabled via environment variable
+  const rateLimitEnabled = configService.get<string>('RATE_LIMIT_ENABLED', 'true').toLowerCase() === 'true';
 
   // Production: stricter limits
-  // Development: more lenient for testing
+  // Development: very lenient for testing and development
   const defaultTtl = isProduction ? 60000 : 60000; // 1 minute window
-  const defaultLimit = isProduction ? 100 : 1000; // requests per window
+  const defaultLimit = isProduction ? 100 : 10000; // requests per window (increased from 1000 to 10000 for dev)
+
+  // If rate limiting is disabled, set very high limits (effectively disabled)
+  const effectiveLimit = rateLimitEnabled 
+    ? configService.get<number>('RATE_LIMIT_MAX', defaultLimit)
+    : 999999; // Effectively unlimited
+
+  const effectiveAuthLimit = rateLimitEnabled
+    ? configService.get<number>('RATE_LIMIT_AUTH_MAX', isProduction ? 5 : 100)
+    : 999999;
+
+  const effectiveUploadLimit = rateLimitEnabled
+    ? configService.get<number>('RATE_LIMIT_UPLOAD_MAX', isProduction ? 10 : 200)
+    : 999999;
 
   return {
     throttlers: [
       {
         name: 'default',
         ttl: configService.get<number>('RATE_LIMIT_TTL', defaultTtl),
-        limit: configService.get<number>('RATE_LIMIT_MAX', defaultLimit),
+        limit: effectiveLimit,
       },
       // Stricter limits for authentication endpoints
       {
         name: 'auth',
         ttl: configService.get<number>('RATE_LIMIT_AUTH_TTL', 60000), // 1 minute
-        limit: configService.get<number>('RATE_LIMIT_AUTH_MAX', isProduction ? 5 : 20), // 5 requests per minute in prod
+        limit: effectiveAuthLimit,
       },
       // Stricter limits for file upload endpoints
       {
         name: 'upload',
         ttl: configService.get<number>('RATE_LIMIT_UPLOAD_TTL', 60000), // 1 minute
-        limit: configService.get<number>('RATE_LIMIT_UPLOAD_MAX', isProduction ? 10 : 50), // 10 uploads per minute in prod
+        limit: effectiveUploadLimit,
       },
     ],
+    // Use in-memory storage (default) - resets on server restart
+    // For production, consider using Redis storage for distributed systems
+    storage: undefined, // undefined = in-memory storage
   };
 }
 

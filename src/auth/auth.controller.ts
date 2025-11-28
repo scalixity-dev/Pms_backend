@@ -12,6 +12,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -191,6 +192,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @SkipThrottle() // Skip rate limiting for this frequently-called endpoint
   @UseGuards(JwtAuthGuard)
   async getCurrentUser(@Req() req: Request & { user?: { userId: string } }) {
     const userId = req.user?.userId;
@@ -219,6 +221,7 @@ export class AuthController {
   }
 
   @Patch('profile')
+  @SkipThrottle() // Skip rate limiting for authenticated profile updates
   @UseGuards(JwtAuthGuard)
   async updateProfile(
     @Req() req: Request & { user?: { userId: string } },
