@@ -10,6 +10,7 @@ import { LeasingModule } from './leasing/leasing.module';
 import { UploadModule } from './upload/upload.module';
 import { ApplicationModule } from './application/application.module';
 import { SecurityModule } from './config/security.module';
+import { EquipmentModule } from './equipment/equipment.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { SecurityModule } from './config/security.module';
     LeasingModule,
     UploadModule,
     ApplicationModule,
+    EquipmentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
