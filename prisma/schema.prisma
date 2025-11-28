@@ -154,6 +154,12 @@ enum RibbonType {
   CUSTOM
 }
 
+enum EquipmentStatus {
+  ACTIVE
+  UNDER_MAINTENANCE
+  REPLACED
+  DISPOSED
+}
 
 // --- CORE MODELS ---
 model User {
@@ -288,6 +294,7 @@ model Property {
   singleUnitDetails SingleUnitDetail?
   leasing           PropertyLeasing?
   listings          Listing[]
+  equipment         Equipment[]
 }
 
 model PropertyPhoto {
@@ -328,6 +335,7 @@ model Unit {
   property        Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   listings        Listing[]
   leasing         PropertyLeasing?   @relation("UnitLeasing")
+  equipment       Equipment[]
 
   @@index([propertyId])
   @@map("units")
@@ -343,8 +351,36 @@ model SingleUnitDetail {
   amenities    Amenities?         @relation("SingleUnitAmenities")
   property     Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   leasing      PropertyLeasing?   @relation("SingleUnitDetailLeasing")
+  equipment       Equipment[]
 
   @@map("single_unit_details")
+}
+
+model Equipment {
+  id                   String             @id @default(uuid())
+  property             Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId           String
+  unit                 Unit?              @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId               String?
+  singleUnitDetail     SingleUnitDetail?  @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  singleUnitDetailId   String?
+  category             String
+  brand                String
+  model                String
+  serialNumber         String
+  price                Decimal
+  dateOfInstallation   DateTime
+  equipmentDetails     String?
+  photoUrl             String?
+  status               EquipmentStatus    @default(ACTIVE)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([propertyId])
+  @@index([unitId])
+  @@index([singleUnitDetailId])
+  @@index([status])
+  @@map("equipment")
 }
 
 model Amenities {
