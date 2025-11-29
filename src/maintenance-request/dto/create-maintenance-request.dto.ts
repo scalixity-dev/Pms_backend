@@ -8,6 +8,8 @@ import {
   IsBoolean,
   IsArray,
   ValidateNested,
+  IsNumber,
+  IsPositive,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -67,8 +69,10 @@ export class CreateMaintenanceMaterialDto {
   @IsNotEmpty({ message: 'Material name is required' })
   materialName: string;
 
-  @IsOptional()
-  quantity?: number;
+    @IsNumber({}, { message: 'Quantity must be a number' })
+    @IsPositive({ message: 'Quantity must be positive' })
+    @IsOptional()
+    quantity?: number;
 
   @IsString()
   @IsOptional()

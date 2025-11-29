@@ -6,12 +6,27 @@ describe('ServiceProviderController', () => {
   let controller: ServiceProviderController;
 
   beforeEach(async () => {
+    const mockServiceProviderService = {
+      create: jest.fn(),
+      findAll: jest.fn(),
+      findOne: jest.fn(),
+      update: jest.fn(),
+      remove: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ServiceProviderController],
-      providers: [ServiceProviderService],
+      providers: [
+        {
+          provide: ServiceProviderService,
+          useValue: mockServiceProviderService,
+        },
+      ],
     }).compile();
 
-    controller = module.get<ServiceProviderController>(ServiceProviderController);
+    controller = module.get<ServiceProviderController>(
+      ServiceProviderController,
+    );
   });
 
   it('should be defined', () => {

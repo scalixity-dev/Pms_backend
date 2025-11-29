@@ -575,13 +575,29 @@ export class ServiceProviderService {
     });
 
     // Update maintenance request status if assignment is completed
+    // Only mark request as COMPLETED when all assignments are COMPLETED
     if (status === AssignmentStatus.COMPLETED) {
-      await this.prisma.maintenanceRequest.update({
-        where: { id: assignment.requestId },
-        data: {
-          status: MaintenanceStatus.COMPLETED,
-          completedAt: new Date(),
-        },
+      await this.prisma.$transaction(async (tx) => {
+        // Count assignments with status != COMPLETED for this request
+        const activeAssignmentsCount = await tx.maintenanceAssignment.count({
+          where: {
+            requestId: assignment.requestId,
+            status: {
+              not: AssignmentStatus.COMPLETED,
+            },
+          },
+        });
+
+        // Only update the request if no active assignments remain
+        if (activeAssignmentsCount === 0) {
+          await tx.maintenanceRequest.update({
+            where: { id: assignment.requestId },
+            data: {
+              status: MaintenanceStatus.COMPLETED,
+              completedAt: new Date(),
+            },
+          });
+        }
       });
     }
 

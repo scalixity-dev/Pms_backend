@@ -6,12 +6,26 @@ describe('MaintenanceRequestController', () => {
   let controller: MaintenanceRequestController;
 
   beforeEach(async () => {
+    const mockMaintenanceRequestService = {
+      create: jest.fn(),
+      findAll: jest.fn(),
+      findOne: jest.fn(),
+      update: jest.fn(),
+      remove: jest.fn(),
+    };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MaintenanceRequestController],
-      providers: [MaintenanceRequestService],
+      providers: [
+        {
+          provide: MaintenanceRequestService,
+          useValue: mockMaintenanceRequestService,
+        },
+      ],
     }).compile();
 
-    controller = module.get<MaintenanceRequestController>(MaintenanceRequestController);
+    controller = module.get<MaintenanceRequestController>(
+      MaintenanceRequestController,
+    );
   });
 
   it('should be defined', () => {
