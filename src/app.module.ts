@@ -11,6 +11,8 @@ import { UploadModule } from './upload/upload.module';
 import { ApplicationModule } from './application/application.module';
 import { SecurityModule } from './config/security.module';
 import { EquipmentModule } from './equipment/equipment.module';
+import { MaintenanceRequestModule } from './maintenance-request/maintenance-request.module';
+import { ServiceProviderModule } from './service-provider/service-provider.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { EquipmentModule } from './equipment/equipment.module';
     UploadModule,
     ApplicationModule,
     EquipmentModule,
+    MaintenanceRequestModule,
+    ServiceProviderModule,
   ],
   controllers: [AppController],
   providers: [AppService],
