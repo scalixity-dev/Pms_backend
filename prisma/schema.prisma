@@ -158,7 +158,48 @@ enum EquipmentStatus {
   ACTIVE
   UNDER_MAINTENANCE
   REPLACED
-  DISPOSED
+  DISPOSED
+}
+
+enum MaintenanceRequestType {
+  MAINTENANCE
+  REPAIR
+  INSPECTION
+  OTHER
+}
+
+enum MaintenanceCategory {
+  APPLIANCES
+  ELECTRICAL
+  EXTERIOR
+  HOUSEHOLD
+  OUTDOORS
+  PLUMBING
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MaintenanceStatus {
+  NEW
+  IN_REVIEW
+  ASSIGNED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  VENDOR_NOTIFIED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }
 
 // --- CORE MODELS ---
@@ -187,6 +228,9 @@ model User {
   applicationsInvited Application[]      @relation("ApplicationInvitedBy")
   // Temporary Relation
   currentListings     Listing[]          @relation("CurrentTenantListings")
+  // Maintenance Relations
+  maintenanceRequests MaintenanceRequest[] @relation("ManagerMaintenanceRequests")
+  assignedMaintenanceRequests MaintenanceAssignment[] @relation("AssignedMaintenanceRequests")
 }
 
 model UserAuthIdentity {
@@ -295,6 +339,7 @@ model Property {
   leasing           PropertyLeasing?
   listings          Listing[]
   equipment         Equipment[]
+  maintenanceRequests MaintenanceRequest[]
 }
 
 model PropertyPhoto {
@@ -336,6 +381,7 @@ model Unit {
   listings        Listing[]
   leasing         PropertyLeasing?   @relation("UnitLeasing")
   equipment       Equipment[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@index([propertyId])
   @@map("units")
@@ -352,6 +398,7 @@ model SingleUnitDetail {
   property     Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   leasing      PropertyLeasing?   @relation("SingleUnitDetailLeasing")
   equipment       Equipment[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@map("single_unit_details")
 }
@@ -375,12 +422,141 @@ model Equipment {
   status               EquipmentStatus    @default(ACTIVE)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+  maintenanceRequests  MaintenanceRequest[]
 
   @@index([propertyId])
   @@index([unitId])
   @@index([singleUnitDetailId])
   @@index([status])
   @@map("equipment")
+}
+
+// --- MAINTENANCE MODELS ---
+// Service Provider model for external vendors/contractors
+model ServiceProvider {
+  id              String                  @id @default(uuid())
+  photoUrl        String?
+  firstName       String
+  middleName      String?
+  lastName        String
+  phoneNumber     String
+  companyName     String
+  companyWebsite  String?
+  faxNumber       String?
+  email           String
+  category        String
+  subcategory     String?
+  address         String
+  city            String
+  state           String
+  zipCode         String
+  country         String
+  isActive        Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  
+  assignments     MaintenanceAssignment[]
+  
+  @@map("service_providers")
+}
+
+model MaintenanceRequest {
+  id                      String                      @id @default(uuid())
+  manager                 User                        @relation("ManagerMaintenanceRequests", fields: [managerId], references: [id])
+  managerId               String
+  property                Property                    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId              String
+  unit                    Unit?                       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId                  String?
+  singleUnitDetail        SingleUnitDetail?           @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  singleUnitDetailId      String?
+  requestType             MaintenanceRequestType?
+  equipmentLinked         Boolean                     @default(false)
+  equipment               Equipment?                  @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  equipmentId             String?
+  category                MaintenanceCategory
+  subcategory             String
+  issue                   String?
+  subissue                String?
+  title                   String
+  problemDetails          String?
+  priority                MaintenancePriority         @default(MEDIUM)
+  status                  MaintenanceStatus           @default(NEW)
+  internalNotes           String?
+
+  // update and connect it with tenant table
+  tenantInformation       String?
+  
+  requestedAt             DateTime                    @default(now())
+  dueDate                 DateTime?
+  completedAt             DateTime?
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  
+  photos                  MaintenancePhoto[]
+  assignments             MaintenanceAssignment[]
+  materials               MaintenanceMaterial[]
+  
+  @@index([managerId])
+  @@index([propertyId])
+  @@index([unitId])
+  @@index([singleUnitDetailId])
+  @@index([equipmentId])
+  @@index([status])
+  @@index([priority])
+  @@index([requestedAt])
+  @@map("maintenance_requests")
+}
+
+model MaintenancePhoto {
+  id              String              @id @default(uuid())
+  request         MaintenanceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId       String
+  photoUrl        String?
+  videoUrl        String?
+  description     String?
+  isPrimary       Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  
+  @@index([requestId])
+  @@map("maintenance_photos")
+}
+
+model MaintenanceAssignment {
+  id                    String              @id @default(uuid())
+  request               MaintenanceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId             String
+  serviceProvider       ServiceProvider?    @relation(fields: [serviceProviderId], references: [id], onDelete: SetNull)
+  serviceProviderId     String?
+  assignedToUser        User?               @relation("AssignedMaintenanceRequests", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedToUserId      String?
+  scheduledDate         DateTime?
+  status                AssignmentStatus    @default(ASSIGNED)
+  notes                 String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  @@index([requestId])
+  @@index([serviceProviderId])
+  @@index([assignedToUserId])
+  @@index([status])
+  @@map("maintenance_assignments")
+}
+
+// Materials Component - Supplies/materials needed for maintenance
+model MaintenanceMaterial {
+  id              String              @id @default(uuid())
+  request         MaintenanceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId       String
+  materialName    String
+  quantity        Int                 @default(1)
+  unit            String?             // e.g., "pieces", "gallons", "feet"
+  description     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  @@index([requestId])
+  @@map("maintenance_materials")
 }
 
 model Amenities {
