@@ -202,6 +202,23 @@ enum AssignmentStatus {
   CANCELLED
 }
 
+enum KeyType {
+  DOOR
+  MAILBOX
+  GARAGE
+  GATE
+  STORAGE
+  OTHER
+}
+
+enum KeyStatus {
+  AVAILABLE
+  ISSUED
+  LOST
+  DAMAGED
+  INACTIVE
+}
+
 // --- CORE MODELS ---
 model User {
   id               String             @id @default(uuid())
@@ -340,6 +357,7 @@ model Property {
   listings          Listing[]
   equipment         Equipment[]
   maintenanceRequests MaintenanceRequest[]
+  keys              Key[]
 }
 
 model PropertyPhoto {
@@ -382,6 +400,7 @@ model Unit {
   leasing         PropertyLeasing?   @relation("UnitLeasing")
   equipment       Equipment[]
   maintenanceRequests MaintenanceRequest[]
+  keys            Key[]
 
   @@index([propertyId])
   @@map("units")
@@ -399,6 +418,7 @@ model SingleUnitDetail {
   leasing      PropertyLeasing?   @relation("SingleUnitDetailLeasing")
   equipment       Equipment[]
   maintenanceRequests MaintenanceRequest[]
+  keys          Key[]
 
   @@map("single_unit_details")
 }
@@ -429,6 +449,32 @@ model Equipment {
   @@index([singleUnitDetailId])
   @@index([status])
   @@map("equipment")
+}
+
+model Key {
+  id                String            @id @default(uuid())
+  property          Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId        String
+  unit              Unit?             @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId            String?
+  singleUnitDetail  SingleUnitDetail? @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  singleUnitDetailId String?
+  keyName           String
+  keyType           KeyType
+  description       String?
+  keyPhotoUrl       String?
+  status            KeyStatus         @default(AVAILABLE)
+  issuedTo          String?
+  issuedDate        DateTime?
+  returnedDate      DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([propertyId])
+  @@index([unitId])
+  @@index([singleUnitDetailId])
+  @@index([status])
+  @@map("keys")
 }
 
 // --- MAINTENANCE MODELS ---

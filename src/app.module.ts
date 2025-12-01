@@ -13,6 +13,7 @@ import { SecurityModule } from './config/security.module';
 import { EquipmentModule } from './equipment/equipment.module';
 import { MaintenanceRequestModule } from './maintenance-request/maintenance-request.module';
 import { ServiceProviderModule } from './service-provider/service-provider.module';
+import { KeysAndLocksModule } from './keys-and-locks/keys-and-locks.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ServiceProviderModule } from './service-provider/service-provider.modul
     EquipmentModule,
     MaintenanceRequestModule,
     ServiceProviderModule,
+    KeysAndLocksModule,
   ],
   controllers: [AppController],
   providers: [AppService],
