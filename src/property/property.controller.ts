@@ -69,13 +69,42 @@ export class PropertyController {
       throw new BadRequestException('Excel file is required');
     }
 
-    const payloads = parsePropertyExcelBuffer(file.buffer);
-
-    for (const payload of payloads) {
-      await this.propertyService.create(payload as CreatePropertyDto, userId);
+    const allowedMimeTypes = [
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException('File must be an Excel file (.xls or .xlsx)');
     }
 
-    return { importedCount: payloads.length };
+    const maxSizeBytes = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSizeBytes) {
+      throw new BadRequestException('File size must not exceed 10MB');
+    }
+
+    const payloads = parsePropertyExcelBuffer(file.buffer);
+    
+    const results = {
+      total: payloads.length,
+      successful: 0,
+      failed: 0,
+      errors: [] as Array<{ row: number; error: string }>,
+    };
+
+    for (let i = 0; i < payloads.length; i++) {
+      try {
+        await this.propertyService.create(payloads[i] as CreatePropertyDto, userId);
+        results.successful++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          row: 1,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    return results;
   }
 
   @Get()

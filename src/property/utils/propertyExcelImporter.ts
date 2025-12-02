@@ -1,87 +1,23 @@
 import * as XLSX from 'xlsx';
+import {
+  PropertyType,
+  PropertyStatus,
+  RibbonType,
+  ParkingType,
+  LaundryType,
+  AirConditioningType,
+  FileType,
+  CreateAmenitiesDto,
+  CreatePropertyPhotoDto,
+  CreatePropertyAttachmentDto,
+  CreateUnitDto,
+  CreateSingleUnitDetailDto,
+  CreateAddressDto,
+  CreatePropertyDto,
+} from '../dto/create-property.dto';
 
-// ===== Types that mirror your backend DTO (no schema changes) =====
-
-export type PropertyType = 'SINGLE' | 'MULTI';
-export type PropertyStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
-export type RibbonType = 'NONE' | 'CHAT' | 'CUSTOM';
-export type ParkingType = 'NONE' | 'STREET' | 'GARAGE' | 'DRIVEWAY' | 'ASSIGNED';
-export type LaundryType = 'NONE' | 'IN_UNIT' | 'ON_SITE' | 'HOOKUPS';
-export type AirConditioningType = 'NONE' | 'CENTRAL' | 'WINDOW' | 'PORTABLE';
-export type FileType = 'PDF' | 'DOC' | 'DOCX' | 'XLS' | 'XLSX' | 'IMAGE' | 'OTHER';
-
-export interface CreateAmenitiesDto {
-  parking: ParkingType;
-  laundry: LaundryType;
-  airConditioning: AirConditioningType;
-  propertyFeatures?: string[];
-  propertyAmenities?: string[];
-}
-
-export interface CreatePropertyPhotoDto {
-  photoUrl: string;
-  isPrimary?: boolean;
-}
-
-export interface CreatePropertyAttachmentDto {
-  fileUrl: string;
-  fileType: FileType;
-  description?: string;
-}
-
-export interface CreateUnitDto {
-  unitName: string;
-  apartmentType?: string;
-  sizeSqft?: number;
-  beds?: number;
-  baths?: number;
-  rent?: number;
-  amenities?: CreateAmenitiesDto;
-}
-
-export interface CreateSingleUnitDetailDto {
-  beds?: number;
-  baths?: number;
-  marketRent?: number;
-  deposit?: number;
-  amenities?: CreateAmenitiesDto;
-}
-
-export interface CreateAddressDto {
-  streetAddress: string;
-  city: string;
-  stateRegion: string;
-  zipCode: string;
-  country: string;
-}
-
-export interface CreatePropertyRequest {
-  managerId?: string;
-  propertyName: string;
-  yearBuilt?: number;
-  mlsNumber?: string;
-  propertyType: PropertyType;
-  sizeSqft?: number;
-  marketRent?: number;
-  depositAmount?: number;
-  address?: CreateAddressDto;
-  description?: string;
-  coverPhotoUrl?: string;
-  youtubeUrl?: string;
-  ribbonType?: RibbonType;
-  ribbonTitle?: string;
-  listingContactName?: string;
-  listingPhoneCountryCode?: string;
-  listingPhoneNumber?: string;
-  listingEmail?: string;
-  displayPhonePublicly?: boolean;
-  status?: PropertyStatus;
-  amenities?: CreateAmenitiesDto;
-  photos?: CreatePropertyPhotoDto[];
-  attachments?: CreatePropertyAttachmentDto[];
-  units?: CreateUnitDto[];
-  singleUnitDetails?: CreateSingleUnitDetailDto;
-}
+// Re-export a lightweight alias that matches the canonical DTO
+export type CreatePropertyRequest = CreatePropertyDto;
 
 // ===== Excel row shape (headers must match your Excel template) =====
 
@@ -125,14 +61,14 @@ interface ExcelRow {
   'Parking Type'?: string;
   'Laundry Type'?: string;
   'Air Conditioning Type'?: string;
-  'Property Features'?: string;   // comma separated
-  'Property Amenities'?: string;  // comma separated
+  'Property Features'?: string; // comma separated
+  'Property Amenities'?: string; // comma separated
 
   // Photos / attachments
-  'Photo URLs'?: string;              // comma separated URLs
-  'Primary Photo URL'?: string;       // single URL
-  'Attachment URLs'?: string;         // comma separated
-  'Attachment File Types'?: string;   // comma separated
+  'Photo URLs'?: string; // comma separated URLs
+  'Primary Photo URL'?: string; // single URL
+  'Attachment URLs'?: string; // comma separated
+  'Attachment File Types'?: string; // comma separated
   'Attachment Descriptions'?: string; // comma separated
 
   // SINGLE-unit detail fields
@@ -159,8 +95,10 @@ function parseNumber(value: string | number | undefined): number | undefined {
 function parseBoolean(value: string | undefined): boolean | undefined {
   if (!value) return undefined;
   const normalized = value.toLowerCase().trim();
-  if (normalized === 'true' || normalized === 'yes' || normalized === 'y') return true;
-  if (normalized === 'false' || normalized === 'no' || normalized === 'n') return false;
+  if (normalized === 'true' || normalized === 'yes' || normalized === 'y')
+    return true;
+  if (normalized === 'false' || normalized === 'no' || normalized === 'n')
+    return false;
   return undefined;
 }
 
@@ -176,7 +114,13 @@ function splitCsv(value: string | undefined): string[] | undefined {
 // ===== Mapping one Excel row -> CreatePropertyRequest =====
 
 function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
-  const propertyType = row['Property Type'].trim().toUpperCase() as PropertyType;
+  const propertyTypeRaw = row['Property Type']?.trim().toUpperCase();
+  if (propertyTypeRaw !== 'SINGLE' && propertyTypeRaw !== 'MULTI') {
+    throw new Error(
+      `Invalid property type "${row['Property Type']}" at row with property name "${row['Property Name']}". Must be SINGLE or MULTI.`
+    );
+  }
+  const propertyType = propertyTypeRaw as PropertyType;
 
   const addressAvailable =
     row['Street Address'] ||
@@ -192,10 +136,16 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
     row['Property Features'] ||
     row['Property Amenities']
       ? {
-          parking: (row['Parking Type']?.trim().toUpperCase() as ParkingType) || 'NONE',
-          laundry: (row['Laundry Type']?.trim().toUpperCase() as LaundryType) || 'NONE',
+          parking:
+            (row['Parking Type']?.trim().toUpperCase() as ParkingType) ||
+            'NONE',
+          laundry:
+            (row['Laundry Type']?.trim().toUpperCase() as LaundryType) ||
+            'NONE',
           airConditioning:
-            (row['Air Conditioning Type']?.trim().toUpperCase() as AirConditioningType) || 'NONE',
+            (row['Air Conditioning Type']
+              ?.trim()
+              .toUpperCase() as AirConditioningType) || 'NONE',
           propertyFeatures: splitCsv(row['Property Features']),
           propertyAmenities: splitCsv(row['Property Amenities']),
         }
@@ -218,16 +168,18 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
   const attachmentUrls = splitCsv(row['Attachment URLs']) ?? [];
   const attachmentTypes = splitCsv(row['Attachment File Types']) ?? [];
   const attachmentDescriptions = splitCsv(row['Attachment Descriptions']) ?? [];
-  const attachments: CreatePropertyAttachmentDto[] = attachmentUrls.map((url, index) => {
-    const type =
-      (attachmentTypes[index]?.toUpperCase() as FileType) ?? 'OTHER';
-    const description = attachmentDescriptions[index];
-    return {
-      fileUrl: url,
-      fileType: type,
-      description,
-    };
-  });
+  const attachments: CreatePropertyAttachmentDto[] = attachmentUrls.map(
+    (url, index) => {
+      const type =
+        (attachmentTypes[index]?.toUpperCase() as FileType) ?? 'OTHER';
+      const description = attachmentDescriptions[index];
+      return {
+        fileUrl: url,
+        fileType: type,
+        description,
+      };
+    },
+  );
 
   let singleUnitDetails: CreateSingleUnitDetailDto | undefined;
   let units: CreateUnitDto[] | undefined;
@@ -255,10 +207,12 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
     // Optional: explicit "Number of Units" column to cap indexes
     const explicitCountRaw = row['Number of Units'];
     const explicitCount =
-      typeof explicitCountRaw === 'string' || typeof explicitCountRaw === 'number'
+      typeof explicitCountRaw === 'string' ||
+      typeof explicitCountRaw === 'number'
         ? parseNumber(explicitCountRaw)
         : undefined;
-    const explicitMaxIndex = explicitCount && explicitCount > 0 ? explicitCount : undefined;
+    const explicitMaxIndex =
+      explicitCount && explicitCount > 0 ? explicitCount : undefined;
 
     // Discover all indexes from keys like "Unit <n> Name"
     const unitNamePrefix = 'Unit ';
@@ -302,7 +256,8 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
 
       unitList.push({
         unitName: nameValue,
-        apartmentType: typeof row[aptTypeKey] === 'string' ? row[aptTypeKey] : undefined,
+        apartmentType:
+          typeof row[aptTypeKey] === 'string' ? row[aptTypeKey] : undefined,
         sizeSqft:
           typeof sizeValue === 'string' || typeof sizeValue === 'number'
             ? parseNumber(sizeValue)
@@ -330,7 +285,13 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
 
   return {
     // managerId is usually filled from auth; omit here by default
-    propertyName: row['Property Name']?.trim(),
+    propertyName: (() => {
+      const name = row['Property Name']?.trim();
+      if (!name) {
+        throw new Error('Property Name is required but missing or empty in Excel row');
+      }
+      return name;
+    })(),
     yearBuilt: parseNumber(row['Year Built']),
     mlsNumber: row['MLS Number'],
     propertyType,
@@ -362,7 +323,9 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
     listingEmail: row['Listing Email'],
     displayPhonePublicly: parseBoolean(row['Display Phone Publicly']),
 
-    status: row.Status ? (row.Status.trim().toUpperCase() as PropertyStatus) : undefined,
+    status: row.Status
+      ? (row.Status.trim().toUpperCase() as PropertyStatus)
+      : undefined,
 
     amenities: amenitiesBase,
     photos: photos.length > 0 ? photos : undefined,
@@ -394,16 +357,36 @@ function toUint8Array(input: ExcelBufferInput): Uint8Array {
  *  - ArrayBuffer / Uint8Array (browser or Node)
  */
 export function parsePropertyExcelBuffer(
-  buffer: ExcelBufferInput
+  buffer: ExcelBufferInput,
 ): CreatePropertyRequest[] {
-  const data = toUint8Array(buffer);
-  const workbook = XLSX.read(data, { type: 'array' });
+  let workbook: XLSX.WorkBook;
+  try {
+    const data = toUint8Array(buffer);
+    workbook = XLSX.read(data, { type: 'array' });
+  } catch (error) {
+    throw new Error(
+      `Failed to parse Excel file: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`,
+    );
+  }
+
+  if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+    throw new Error('Excel file contains no sheets');
+  }
+
   const firstSheetName = workbook.SheetNames[0];
   const firstSheet = workbook.Sheets[firstSheetName];
 
-  const rows = XLSX.utils.sheet_to_json<ExcelRow>(firstSheet, {
-    defval: '',
-  });
+  if (!firstSheet) {
+    throw new Error(`Sheet "${firstSheetName}" not found in workbook`);
+  }
+
+  const rows = XLSX.utils.sheet_to_json<ExcelRow>(firstSheet, {});
+
+  if (rows.length === 0) {
+    throw new Error('Excel file contains no data rows');
+  }
 
   return rows.map(mapExcelRowToPayload);
 }
