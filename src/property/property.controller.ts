@@ -11,12 +11,17 @@ import {
   Req,
   UseGuards,
   UnauthorizedException,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request, Express } from 'express';
 import { PropertyService } from './property.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { parsePropertyExcelBuffer } from './utils/propertyExcelImporter';
 
 // Extend Express Request to include user property from JwtAuthGuard
 interface AuthenticatedRequest extends Request {
@@ -46,6 +51,31 @@ export class PropertyController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.propertyService.create(createPropertyDto, userId);
+  }
+
+  @Post('import-excel')
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor('file'))
+  async importFromExcel(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Excel file is required');
+    }
+
+    const payloads = parsePropertyExcelBuffer(file.buffer);
+
+    for (const payload of payloads) {
+      await this.propertyService.create(payload as CreatePropertyDto, userId);
+    }
+
+    return { importedCount: payloads.length };
   }
 
   @Get()
