@@ -13,13 +13,15 @@ import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import * as argon2 from 'argon2';
 import { AuthProvider, UserRole, OtpType, SubscriptionStatus } from '@prisma/client';
-import { randomInt } from 'crypto';
-import { addYears, addMonths } from 'date-fns';
+import { randomInt, randomBytes } from 'crypto';
+import { addYears, addMonths, addDays } from 'date-fns';
 
 @Injectable()
 export class AuthService {
   private readonly OTP_EXPIRY_MINUTES = 10;
   private readonly OTP_LENGTH = 6;
+  private readonly DEVICE_TOKEN_EXPIRY_DAYS = 90; // Device token expires after 90 days
+  private readonly DEVICE_TOKEN_LENGTH = 32; // 32 bytes = 64 hex characters
 
   constructor(
     private readonly prisma: PrismaService,
@@ -102,6 +104,203 @@ export class AuthService {
       // Log error and return false to fail securely
       console.error('Error checking property manager subscription:', error);
       return false;
+    }
+  }
+
+  /**
+   * Generate a secure random device token
+   */
+  private generateDeviceToken(): string {
+    return randomBytes(this.DEVICE_TOKEN_LENGTH).toString('hex');
+  }
+
+  /**
+   * Hash device token using argon2
+   */
+  private async hashDeviceToken(token: string): Promise<string> {
+    return argon2.hash(token);
+  }
+
+  /**
+   * Verify device token hash
+   */
+  private async verifyDeviceTokenHash(token: string, hash: string): Promise<boolean> {
+    try {
+      return await argon2.verify(hash, token);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Validate device token from cookie
+   */
+  async validateDeviceToken(
+    userId: string,
+    deviceToken: string,
+    deviceFingerprint?: string,
+  ): Promise<{ isValid: boolean; deviceId?: string; requiresFingerprintMatch?: boolean }> {
+    if (!deviceToken) {
+      return { isValid: false };
+    }
+
+    // Find all devices for this user with non-revoked, non-expired tokens
+    const devices = await this.prisma.device.findMany({
+      where: {
+        userId,
+        deviceTokenHash: { not: null },
+        isRevoked: false,
+        OR: [
+          { tokenExpiresAt: null },
+          { tokenExpiresAt: { gt: new Date() } },
+        ],
+      },
+    });
+
+    // Try to verify the token against each device's stored hash
+    for (const device of devices) {
+      if (!device.deviceTokenHash) continue;
+
+      const isValid = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
+      
+      if (isValid) {
+        // Token matches this device
+        // Check if fingerprint is provided and matches
+        if (deviceFingerprint && device.deviceFingerprint) {
+          const fingerprintMatches = device.deviceFingerprint === deviceFingerprint;
+          if (!fingerprintMatches) {
+            // Fingerprint doesn't match - require OTP but token is technically valid
+            return { isValid: true, deviceId: device.id, requiresFingerprintMatch: true };
+          }
+        }
+
+        // Update last seen
+        await this.prisma.device.update({
+          where: { id: device.id },
+          data: { lastSeenAt: new Date() },
+        });
+
+        return { isValid: true, deviceId: device.id };
+      }
+    }
+
+    // No matching token found
+    return { isValid: false };
+  }
+
+  /**
+   * Create or update device token
+   * If existingDeviceToken is provided, reuse it instead of generating a new one
+   */
+  async createOrUpdateDeviceToken(
+    userId: string,
+    ipAddress: string,
+    userAgent?: string,
+    deviceFingerprint?: string,
+    existingDeviceToken?: string,
+  ): Promise<{ deviceToken: string; deviceId: string }> {
+    let deviceToken: string;
+    const tokenExpiresAt = addDays(new Date(), this.DEVICE_TOKEN_EXPIRY_DAYS);
+
+    if (existingDeviceToken) {
+      // Reuse existing token from cookie - verify against stored hashes
+      deviceToken = existingDeviceToken;
+      
+      // Query all devices for this user to find a matching token hash
+      const userDevices = await this.prisma.device.findMany({
+        where: {
+          userId,
+          deviceTokenHash: { not: null },
+        },
+      });
+
+      // Iterate through devices and verify the token against stored hashes
+      for (const device of userDevices) {
+        if (!device.deviceTokenHash) continue;
+
+        const isMatch = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
+        if (isMatch) {
+          // Found matching device - update and reuse it
+          await this.prisma.device.update({
+            where: { id: device.id },
+            data: {
+              ipAddress,
+              userAgent,
+              deviceFingerprint,
+              tokenExpiresAt,
+              isRevoked: false,
+              isVerified: true,
+              lastSeenAt: new Date(),
+            },
+          });
+          return { deviceToken, deviceId: device.id };
+        }
+      }
+
+      // No matching device found - create new device with hashed token
+      const tokenHash = await this.hashDeviceToken(deviceToken);
+      const newDevice = await this.prisma.device.create({
+        data: {
+          userId,
+          ipAddress,
+          userAgent,
+          deviceFingerprint,
+          deviceTokenHash: tokenHash,
+          tokenExpiresAt,
+          isVerified: true,
+          isRevoked: false,
+        },
+      });
+      return { deviceToken, deviceId: newDevice.id };
+    } else {
+      // Generate new token
+      deviceToken = this.generateDeviceToken();
+      const tokenHash = await this.hashDeviceToken(deviceToken);
+
+      // Create new device with token hash
+      const newDevice = await this.prisma.device.create({
+        data: {
+          userId,
+          ipAddress,
+          userAgent,
+          deviceFingerprint,
+          deviceTokenHash: tokenHash,
+          tokenExpiresAt,
+          isVerified: true,
+          isRevoked: false,
+        },
+      });
+      return { deviceToken, deviceId: newDevice.id };
+    }
+  }
+
+  /**
+   * Revoke device token
+   */
+  async revokeDeviceToken(userId: string, deviceToken: string): Promise<void> {
+    // Find all devices for this user with tokens
+    const devices = await this.prisma.device.findMany({
+      where: {
+        userId,
+        deviceTokenHash: { not: null },
+        isRevoked: false,
+      },
+    });
+
+    // Try to verify the token against each device's stored hash
+    for (const device of devices) {
+      if (!device.deviceTokenHash) continue;
+
+      const isValid = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
+      
+      if (isValid) {
+        // Revoke this device's token
+        await this.prisma.device.update({
+          where: { id: device.id },
+          data: { isRevoked: true },
+        });
+        return;
+      }
     }
   }
 
@@ -422,8 +621,10 @@ export class AuthService {
     userId: string,
     code: string,
     ipAddress: string,
+    userAgent?: string,
     deviceFingerprint?: string,
-  ): Promise<{ token: string }> {
+    existingDeviceToken?: string,
+  ): Promise<{ token: string; deviceToken: string }> {
     // Validate code format
     if (!code || typeof code !== 'string' || code.length !== 6 || !/^\d{6}$/.test(code)) {
       throw new BadRequestException('OTP code must be exactly 6 digits');
@@ -481,32 +682,30 @@ export class AuthService {
       throw new BadRequestException('Invalid OTP code. Please check the code and try again, or request a new code.');
     }
 
-    // Mark OTP as used and verify device, then generate JWT token
-    const token = await this.prisma.$transaction(async (tx) => {
-      await tx.otp.update({
-        where: { id: otp.id },
-        data: { isUsed: true },
-      });
-
-      // Update device matching both IP and fingerprint (consistent with trackDevice)
-      await tx.device.updateMany({
-        where: {
-          userId: userId,
-          ipAddress,
-          deviceFingerprint: deviceFingerprint || null,
-        },
-        data: { isVerified: true },
-      });
-
-      // Generate JWT token after successful device verification
-      return this.jwtService.sign({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      });
+    // Mark OTP as used
+    await this.prisma.otp.update({
+      where: { id: otp.id },
+      data: { isUsed: true },
     });
 
-    return { token };
+    // Create or update device token
+    // If existingDeviceToken is provided (from cookie), reuse it instead of generating new one
+    const { deviceToken } = await this.createOrUpdateDeviceToken(
+      userId,
+      ipAddress,
+      userAgent,
+      deviceFingerprint,
+      existingDeviceToken, // Reuse existing token if cookie exists
+    );
+
+    // Generate JWT token after successful device verification
+    const jwtToken = this.jwtService.sign({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    return { token: jwtToken, deviceToken };
   }
 
   /**
@@ -565,6 +764,7 @@ export class AuthService {
     ipAddress: string,
     userAgent?: string,
     deviceFingerprint?: string,
+    existingDeviceToken?: string,
   ) {
     const authProvider = provider === 'GOOGLE' 
       ? AuthProvider.GOOGLE 
@@ -684,13 +884,23 @@ export class AuthService {
         });
       }
 
-      // Track device
+      // Track device (but don't create device token yet - will be done below)
       await this.trackDevice(user.id, ipAddress, userAgent, deviceFingerprint);
     }
 
     if (!user) {
       throw new NotFoundException('User not found after OAuth callback');
     }
+
+    // Create or update device token
+    // If existingDeviceToken is provided (from cookie), reuse it instead of generating new one
+    const { deviceToken } = await this.createOrUpdateDeviceToken(
+      user.id,
+      ipAddress,
+      userAgent,
+      deviceFingerprint,
+      existingDeviceToken, // Reuse existing token if cookie exists
+    );
 
     // Generate JWT token
     const token = this.jwtService.sign({
@@ -709,6 +919,7 @@ export class AuthService {
         isActive: user.isActive,
       },
       token,
+      deviceToken, // Return device token so controller can set cookie if needed
     };
   }
 
@@ -720,6 +931,7 @@ export class AuthService {
     ipAddress: string,
     userAgent?: string,
     deviceFingerprint?: string,
+    deviceToken?: string,
   ) {
     const { email, password } = loginDto;
 
@@ -773,45 +985,49 @@ export class AuthService {
       throw new UnauthorizedException('Please verify your email before logging in.');
     }
 
-    // Track device and check if verification is needed
-    const { isNewDevice } = await this.trackDevice(user.id, ipAddress, userAgent, deviceFingerprint);
+    // Check device token if provided
+    if (deviceToken) {
+      const tokenValidation = await this.validateDeviceToken(user.id, deviceToken, deviceFingerprint);
+      
+      if (tokenValidation.isValid && !tokenValidation.requiresFingerprintMatch) {
+        // Valid token and fingerprint matches - skip OTP, allow login
+        await this.prisma.userAuthIdentity.update({
+          where: { id: emailPasswordIdentity.id },
+          data: { lastLoginAt: new Date() },
+        });
 
-    // If it's a new device, send device verification OTP
-    if (isNewDevice) {
-      await this.createAndSendOtp(
-        user.id,
-        user.email,
-        user.fullName,
-        OtpType.DEVICE_VERIFICATION,
-        ipAddress,
-      );
-
-      return {
-        user: {
-          id: user.id,
+        // Generate JWT token
+        const token = this.jwtService.sign({
+          userId: user.id,
           email: user.email,
-          fullName: user.fullName,
           role: user.role,
-          isEmailVerified: user.isEmailVerified,
-          isActive: user.isActive,
-        },
-        requiresDeviceVerification: true,
-        message: 'New device detected. OTP sent to your email for verification.',
-      };
+        });
+
+        return {
+          user: {
+            id: user.id,
+            email: user.email,
+            fullName: user.fullName,
+            role: user.role,
+            isEmailVerified: user.isEmailVerified,
+            isActive: user.isActive,
+          },
+          token,
+          requiresDeviceVerification: false,
+          deviceToken: deviceToken, // Return same token to keep cookie
+        };
+      }
+      // Token exists but invalid or fingerprint mismatch - require OTP
     }
 
-    // Update last login time
-    await this.prisma.userAuthIdentity.update({
-      where: { id: emailPasswordIdentity.id },
-      data: { lastLoginAt: new Date() },
-    });
-
-    // Generate JWT token
-    const token = this.jwtService.sign({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    // No valid device token - require OTP verification
+    await this.createAndSendOtp(
+      user.id,
+      user.email,
+      user.fullName,
+      OtpType.DEVICE_VERIFICATION,
+      ipAddress,
+    );
 
     return {
       user: {
@@ -822,8 +1038,8 @@ export class AuthService {
         isEmailVerified: user.isEmailVerified,
         isActive: user.isActive,
       },
-      token,
-      requiresDeviceVerification: false,
+      requiresDeviceVerification: true,
+      message: 'Device verification required. OTP sent to your email.',
     };
   }
 

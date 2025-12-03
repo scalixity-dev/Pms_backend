@@ -2,6 +2,7 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -221,9 +222,9 @@ enum KeyStatus {
 
 // --- CORE MODELS ---
 model User {
-  id               String             @id @default(uuid())
-  role             UserRole           @default(PROPERTY_MANAGER)
-  email            String             @unique
+  id               String   @id @default(uuid())
+  role             UserRole @default(PROPERTY_MANAGER)
+  email            String   @unique
   fullName         String
   phoneCountryCode String?
   phoneNumber      String?
@@ -231,34 +232,34 @@ model User {
   state            String?
   pincode          String?
   address          String?
-  isEmailVerified  Boolean            @default(false)
-  isActive         Boolean            @default(true)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  isEmailVerified  Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  authIdentities      UserAuthIdentity[]
-  subscriptions       Subscription[]
-  properties          Property[]         @relation("ManagerProperties")
-  devices             Device[]
-  otps                Otp[]
+  authIdentities              UserAuthIdentity[]
+  subscriptions               Subscription[]
+  properties                  Property[]              @relation("ManagerProperties")
+  devices                     Device[]
+  otps                        Otp[]
   // New Relation for Application Invitation
-  applicationsInvited Application[]      @relation("ApplicationInvitedBy")
+  applicationsInvited         Application[]           @relation("ApplicationInvitedBy")
   // Temporary Relation
-  currentListings     Listing[]          @relation("CurrentTenantListings")
+  currentListings             Listing[]               @relation("CurrentTenantListings")
   // Maintenance Relations
-  maintenanceRequests MaintenanceRequest[] @relation("ManagerMaintenanceRequests")
+  maintenanceRequests         MaintenanceRequest[]    @relation("ManagerMaintenanceRequests")
   assignedMaintenanceRequests MaintenanceAssignment[] @relation("AssignedMaintenanceRequests")
 }
 
 model UserAuthIdentity {
-  id             String         @id @default(uuid())
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String       @id @default(uuid())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId         String
   provider       AuthProvider
   providerUserId String?
   passwordHash   String?
   lastLoginAt    DateTime?
-  createdAt      DateTime       @default(now())
+  createdAt      DateTime     @default(now())
 
   @@unique([userId, provider])
 }
@@ -278,86 +279,91 @@ model Subscription {
 }
 
 model Otp {
-  id        String    @id @default(uuid())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   code      String
   type      OtpType
   expiresAt DateTime
-  isUsed    Boolean   @default(false)
-  createdAt DateTime  @default(now())
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   @@index([userId, type, isUsed])
   @@index([code, expiresAt, isUsed])
 }
 
 model Device {
-  id                  String    @id @default(uuid())
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId              String
-  ipAddress           String
-  userAgent           String?
-  deviceFingerprint   String?
-  isVerified          Boolean   @default(false)
-  lastSeenAt          DateTime  @default(now())
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  deviceName        String?   // friendly name, e.g., "Chrome on Windows"
+  ipAddress         String?   // optional, don't use as part of uniqueness
+  userAgent         String?
+  deviceFingerprint String?
+  isVerified        Boolean   @default(false)
+  deviceTokenHash   String?   // Allow same token hash across different users
+  tokenExpiresAt    DateTime?
+  isRevoked         Boolean   @default(false)
+  lastSeenAt        DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  @@unique([userId, ipAddress, deviceFingerprint])
+  @@unique([userId, deviceTokenHash]) // Same token hash can be used by different users, but only once per user
   @@index([userId, isVerified])
+  @@index([deviceTokenHash])
 }
 
 
 // --- PROPERTY MODELS ---
 model Address {
-  id              String   @id @default(uuid())
-  streetAddress   String
-  city            String
-  stateRegion     String
-  zipCode         String
-  country         String
-  propertyId      String   @unique
-  property        Property @relation("PropertyAddress", fields: [propertyId], references: [id], onDelete: Cascade)
+  id            String   @id @default(uuid())
+  streetAddress String
+  city          String
+  stateRegion   String
+  zipCode       String
+  country       String
+  propertyId    String   @unique
+  property      Property @relation("PropertyAddress", fields: [propertyId], references: [id], onDelete: Cascade)
 }
 
 model Property {
-  id                String                 @id @default(uuid())
-  manager           User                   @relation("ManagerProperties", fields: [managerId], references: [id])
-  managerId         String
-  propertyName      String
-  yearBuilt         Int?
-  mlsNumber         String?
-  propertyType      PropertyType
-  sizeSqft          Decimal?
-  marketRent        Decimal?
-  depositAmount     Decimal?
+  id                      String               @id @default(uuid())
+  manager                 User                 @relation("ManagerProperties", fields: [managerId], references: [id])
+  managerId               String
+  propertyName            String
+  yearBuilt               Int?
+  mlsNumber               String?
+  propertyType            PropertyType
+  sizeSqft                Decimal?
+  marketRent              Decimal?
+  depositAmount           Decimal?
   // Retained coverPhotoUrl from the first schema
-  coverPhotoUrl     String?
+  coverPhotoUrl           String?
   // Retained youtubeUrl from the first schema
-  youtubeUrl        String?
-  ribbonType        RibbonType             @default(NONE)
-  ribbonTitle       String?
-  address           Address?               @relation("PropertyAddress")
-  description       String?
+  youtubeUrl              String?
+  ribbonType              RibbonType           @default(NONE)
+  ribbonTitle             String?
+  address                 Address?             @relation("PropertyAddress")
+  description             String?
   // Listing contact information
-  listingContactName String?
+  listingContactName      String?
   listingPhoneCountryCode String?
-  listingPhoneNumber String?
-  listingEmail      String?
-  displayPhonePublicly Boolean              @default(false)
-  status            PropertyStatus         @default(ACTIVE)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  amenities         Amenities?             @relation("PropertyAmenities")
-  photos            PropertyPhoto[]
-  attachments       PropertyAttachment[]
-  units             Unit[]
-  singleUnitDetails SingleUnitDetail?
-  leasing           PropertyLeasing?
-  listings          Listing[]
-  equipment         Equipment[]
-  maintenanceRequests MaintenanceRequest[]
-  keys              Key[]
+  listingPhoneNumber      String?
+  listingEmail            String?
+  displayPhonePublicly    Boolean              @default(false)
+  status                  PropertyStatus       @default(ACTIVE)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  amenities               Amenities?           @relation("PropertyAmenities")
+  photos                  PropertyPhoto[]
+  attachments             PropertyAttachment[]
+  units                   Unit[]
+  singleUnitDetails       SingleUnitDetail?
+  leasing                 PropertyLeasing?
+  listings                Listing[]
+  equipment               Equipment[]
+  maintenanceRequests     MaintenanceRequest[]
+  keys                    Key[]
 }
 
 model PropertyPhoto {
@@ -386,63 +392,63 @@ model PropertyAttachment {
 }
 
 model Unit {
-  id              String             @id @default(uuid())
-  propertyId      String
-  unitName        String
-  apartmentType   String?
-  sizeSqft        Decimal?
-  beds            Int?
-  baths           Decimal?
-  rent            Decimal?
-  amenities       Amenities?         @relation("UnitAmenities")
-  property        Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  listings        Listing[]
-  leasing         PropertyLeasing?   @relation("UnitLeasing")
-  equipment       Equipment[]
+  id                  String               @id @default(uuid())
+  propertyId          String
+  unitName            String
+  apartmentType       String?
+  sizeSqft            Decimal?
+  beds                Int?
+  baths               Decimal?
+  rent                Decimal?
+  amenities           Amenities?           @relation("UnitAmenities")
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  listings            Listing[]
+  leasing             PropertyLeasing?     @relation("UnitLeasing")
+  equipment           Equipment[]
   maintenanceRequests MaintenanceRequest[]
-  keys            Key[]
+  keys                Key[]
 
   @@index([propertyId])
   @@map("units")
 }
 
 model SingleUnitDetail {
-  id           String             @id @default(uuid())
-  propertyId   String             @unique
-  beds         Int?
-  baths        Decimal?
-  marketRent   Decimal?
-  deposit      Decimal?
-  amenities    Amenities?         @relation("SingleUnitAmenities")
-  property     Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  leasing      PropertyLeasing?   @relation("SingleUnitDetailLeasing")
-  equipment       Equipment[]
+  id                  String               @id @default(uuid())
+  propertyId          String               @unique
+  beds                Int?
+  baths               Decimal?
+  marketRent          Decimal?
+  deposit             Decimal?
+  amenities           Amenities?           @relation("SingleUnitAmenities")
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  leasing             PropertyLeasing?     @relation("SingleUnitDetailLeasing")
+  equipment           Equipment[]
   maintenanceRequests MaintenanceRequest[]
-  keys          Key[]
+  keys                Key[]
 
   @@map("single_unit_details")
 }
 
 model Equipment {
-  id                   String             @id @default(uuid())
-  property             Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  propertyId           String
-  unit                 Unit?              @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  unitId               String?
-  singleUnitDetail     SingleUnitDetail?  @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
-  singleUnitDetailId   String?
-  category             String
-  brand                String
-  model                String
-  serialNumber         String
-  price                Decimal
-  dateOfInstallation   DateTime
-  equipmentDetails     String?
-  photoUrl             String?
-  status               EquipmentStatus    @default(ACTIVE)
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  maintenanceRequests  MaintenanceRequest[]
+  id                  String               @id @default(uuid())
+  property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId          String
+  unit                Unit?                @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId              String?
+  singleUnitDetail    SingleUnitDetail?    @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  singleUnitDetailId  String?
+  category            String
+  brand               String
+  model               String
+  serialNumber        String
+  price               Decimal
+  dateOfInstallation  DateTime
+  equipmentDetails    String?
+  photoUrl            String?
+  status              EquipmentStatus      @default(ACTIVE)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  maintenanceRequests MaintenanceRequest[]
 
   @@index([propertyId])
   @@index([unitId])
@@ -452,23 +458,23 @@ model Equipment {
 }
 
 model Key {
-  id                String            @id @default(uuid())
-  property          Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  propertyId        String
-  unit              Unit?             @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  unitId            String?
-  singleUnitDetail  SingleUnitDetail? @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  id                 String            @id @default(uuid())
+  property           Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId         String
+  unit               Unit?             @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId             String?
+  singleUnitDetail   SingleUnitDetail? @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
   singleUnitDetailId String?
-  keyName           String
-  keyType           KeyType
-  description       String?
-  keyPhotoUrl       String?
-  status            KeyStatus         @default(AVAILABLE)
-  issuedTo          String?
-  issuedDate        DateTime?
-  returnedDate      DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  keyName            String
+  keyType            KeyType
+  description        String?
+  keyPhotoUrl        String?
+  status             KeyStatus         @default(AVAILABLE)
+  issuedTo           String?
+  issuedDate         DateTime?
+  returnedDate       DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([propertyId])
   @@index([unitId])
@@ -480,69 +486,69 @@ model Key {
 // --- MAINTENANCE MODELS ---
 // Service Provider model for external vendors/contractors
 model ServiceProvider {
-  id              String                  @id @default(uuid())
-  photoUrl        String?
-  firstName       String
-  middleName      String?
-  lastName        String
-  phoneNumber     String
-  companyName     String
-  companyWebsite  String?
-  faxNumber       String?
-  email           String
-  category        String
-  subcategory     String?
-  address         String
-  city            String
-  state           String
-  zipCode         String
-  country         String
-  isActive        Boolean                 @default(true)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  
-  assignments     MaintenanceAssignment[]
-  
+  id             String   @id @default(uuid())
+  photoUrl       String?
+  firstName      String
+  middleName     String?
+  lastName       String
+  phoneNumber    String
+  companyName    String
+  companyWebsite String?
+  faxNumber      String?
+  email          String
+  category       String
+  subcategory    String?
+  address        String
+  city           String
+  state          String
+  zipCode        String
+  country        String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assignments MaintenanceAssignment[]
+
   @@map("service_providers")
 }
 
 model MaintenanceRequest {
-  id                      String                      @id @default(uuid())
-  manager                 User                        @relation("ManagerMaintenanceRequests", fields: [managerId], references: [id])
-  managerId               String
-  property                Property                    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  propertyId              String
-  unit                    Unit?                       @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  unitId                  String?
-  singleUnitDetail        SingleUnitDetail?           @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
-  singleUnitDetailId      String?
-  requestType             MaintenanceRequestType?
-  equipmentLinked         Boolean                     @default(false)
-  equipment               Equipment?                  @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
-  equipmentId             String?
-  category                MaintenanceCategory
-  subcategory             String
-  issue                   String?
-  subissue                String?
-  title                   String
-  problemDetails          String?
-  priority                MaintenancePriority         @default(MEDIUM)
-  status                  MaintenanceStatus           @default(NEW)
-  internalNotes           String?
+  id                 String                  @id @default(uuid())
+  manager            User                    @relation("ManagerMaintenanceRequests", fields: [managerId], references: [id])
+  managerId          String
+  property           Property                @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId         String
+  unit               Unit?                   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId             String?
+  singleUnitDetail   SingleUnitDetail?       @relation(fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  singleUnitDetailId String?
+  requestType        MaintenanceRequestType?
+  equipmentLinked    Boolean                 @default(false)
+  equipment          Equipment?              @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  equipmentId        String?
+  category           MaintenanceCategory
+  subcategory        String
+  issue              String?
+  subissue           String?
+  title              String
+  problemDetails     String?
+  priority           MaintenancePriority     @default(MEDIUM)
+  status             MaintenanceStatus       @default(NEW)
+  internalNotes      String?
 
   // update and connect it with tenant table
-  tenantInformation       String?
-  
-  requestedAt             DateTime                    @default(now())
-  dueDate                 DateTime?
-  completedAt             DateTime?
-  createdAt               DateTime                    @default(now())
-  updatedAt               DateTime                    @updatedAt
-  
-  photos                  MaintenancePhoto[]
-  assignments             MaintenanceAssignment[]
-  materials               MaintenanceMaterial[]
-  
+  tenantInformation String?
+
+  requestedAt DateTime  @default(now())
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  photos      MaintenancePhoto[]
+  assignments MaintenanceAssignment[]
+  materials   MaintenanceMaterial[]
+
   @@index([managerId])
   @@index([propertyId])
   @@index([unitId])
@@ -555,33 +561,33 @@ model MaintenanceRequest {
 }
 
 model MaintenancePhoto {
-  id              String              @id @default(uuid())
-  request         MaintenanceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  requestId       String
-  photoUrl        String?
-  videoUrl        String?
-  description     String?
-  isPrimary       Boolean             @default(false)
-  createdAt       DateTime            @default(now())
-  
+  id          String             @id @default(uuid())
+  request     MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId   String
+  photoUrl    String?
+  videoUrl    String?
+  description String?
+  isPrimary   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+
   @@index([requestId])
   @@map("maintenance_photos")
 }
 
 model MaintenanceAssignment {
-  id                    String              @id @default(uuid())
-  request               MaintenanceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  requestId             String
-  serviceProvider       ServiceProvider?    @relation(fields: [serviceProviderId], references: [id], onDelete: SetNull)
-  serviceProviderId     String?
-  assignedToUser        User?               @relation("AssignedMaintenanceRequests", fields: [assignedToUserId], references: [id], onDelete: SetNull)
-  assignedToUserId      String?
-  scheduledDate         DateTime?
-  status                AssignmentStatus    @default(ASSIGNED)
-  notes                 String?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  
+  id                String             @id @default(uuid())
+  request           MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId         String
+  serviceProvider   ServiceProvider?   @relation(fields: [serviceProviderId], references: [id], onDelete: SetNull)
+  serviceProviderId String?
+  assignedToUser    User?              @relation("AssignedMaintenanceRequests", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedToUserId  String?
+  scheduledDate     DateTime?
+  status            AssignmentStatus   @default(ASSIGNED)
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
   @@index([requestId])
   @@index([serviceProviderId])
   @@index([assignedToUserId])
@@ -591,51 +597,50 @@ model MaintenanceAssignment {
 
 // Materials Component - Supplies/materials needed for maintenance
 model MaintenanceMaterial {
-  id              String              @id @default(uuid())
-  request         MaintenanceRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  requestId       String
-  materialName    String
-  quantity        Int                 @default(1)
-  unit            String?             // e.g., "pieces", "gallons", "feet"
-  description     String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  
+  id           String             @id @default(uuid())
+  request      MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  requestId    String
+  materialName String
+  quantity     Int                @default(1)
+  unit         String? // e.g., "pieces", "gallons", "feet"
+  description  String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
   @@index([requestId])
   @@map("maintenance_materials")
 }
 
 model Amenities {
-  id                   String                 @id @default(uuid())
-  propertyId           String?                @unique
-  unitId               String?                @unique
-  singleUnitDetailId   String?                @unique
-  parking              ParkingType
-  laundry              LaundryType
-  airConditioning      AirConditioningType
-  propertyFeatures     String[]               @default([])
-  propertyAmenities    String[]               @default([])
-  property             Property?              @relation("PropertyAmenities", fields: [propertyId], references: [id], onDelete: Cascade)
-  unit                 Unit?                  @relation("UnitAmenities", fields: [unitId], references: [id], onDelete: Cascade)
-  singleUnitDetail     SingleUnitDetail?      @relation("SingleUnitAmenities", fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  id                 String              @id @default(uuid())
+  propertyId         String?             @unique
+  unitId             String?             @unique
+  singleUnitDetailId String?             @unique
+  parking            ParkingType
+  laundry            LaundryType
+  airConditioning    AirConditioningType
+  propertyFeatures   String[]            @default([])
+  propertyAmenities  String[]            @default([])
+  property           Property?           @relation("PropertyAmenities", fields: [propertyId], references: [id], onDelete: Cascade)
+  unit               Unit?               @relation("UnitAmenities", fields: [unitId], references: [id], onDelete: Cascade)
+  singleUnitDetail   SingleUnitDetail?   @relation("SingleUnitAmenities", fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
   @@map("amenities")
 }
 
-
 // --- LEASING & LISTING MODELS ---
 model PropertyLeasing {
-  id                      String                  @id @default(uuid())
+  id                 String            @id @default(uuid())
   // The property this leasing term belongs to (for multi-unit properties)
-  property                Property                @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  propertyId              String                  @unique 
+  property           Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId         String            @unique
   // The specific unit this leasing term applies to (if applicable)
-  unit                    Unit?                   @relation("UnitLeasing", fields: [unitId], references: [id], onDelete: Cascade)
-  unitId                  String?                 @unique
+  unit               Unit?             @relation("UnitLeasing", fields: [unitId], references: [id], onDelete: Cascade)
+  unitId             String?           @unique
   // The single unit detail this leasing term applies to (if propertyType is SINGLE)
-  singleUnitDetail        SingleUnitDetail?       @relation("SingleUnitDetailLeasing", fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
-  singleUnitDetailId      String?                 @unique
+  singleUnitDetail   SingleUnitDetail? @relation("SingleUnitDetailLeasing", fields: [singleUnitDetailId], references: [id], onDelete: Cascade)
+  singleUnitDetailId String?           @unique
 
   monthlyRent             Decimal
   securityDeposit         Decimal?
@@ -644,19 +649,19 @@ model PropertyLeasing {
   minLeaseDuration        LeaseDuration
   maxLeaseDuration        LeaseDuration
   description             String?
-  petsAllowed             Boolean                 @default(false)
-  petCategory             String[]                @default([])
+  petsAllowed             Boolean       @default(false)
+  petCategory             String[]      @default([])
   petDeposit              Decimal?
   petFee                  Decimal?
   petDescription          String?
-  onlineRentalApplication Boolean                 @default(false)
-  requireApplicationFee   Boolean                 @default(false)
+  onlineRentalApplication Boolean       @default(false)
+  requireApplicationFee   Boolean       @default(false)
   applicationFee          Decimal?
   // REMOVED: applicantName, applicantContact, applicantEmail (Belong in Application)
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
-  applications            Application[]
+  applications Application[]
 
   @@index([propertyId])
   @@index([unitId])
@@ -665,52 +670,52 @@ model PropertyLeasing {
 }
 
 model Listing {
-  id                         String              @id @default(uuid())
-  property                   Property            @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  propertyId                 String
+  id         String   @id @default(uuid())
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId String
 
-  unit                       Unit?               @relation(fields: [unitId], references: [id], onDelete: Cascade)
-  unitId                     String?
- 
+  unit   Unit?   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  unitId String?
+
   // Temporary relation to tenant
-  currentTenant              User?               @relation("CurrentTenantListings", fields: [currentTenantId], references: [id], onDelete: SetNull)
-  currentTenantId            String?
+  currentTenant   User?   @relation("CurrentTenantListings", fields: [currentTenantId], references: [id], onDelete: SetNull)
+  currentTenantId String?
 
-  listingType                ListingType         @default(ENTIRE_PROPERTY)
-  listingStatus              ListingStatus       @default(DRAFT)
-  occupancyStatus            OccupancyStatus     @default(VACANT)
-  visibility                 ListingVisibility   @default(PUBLIC)
+  listingType     ListingType       @default(ENTIRE_PROPERTY)
+  listingStatus   ListingStatus     @default(DRAFT)
+  occupancyStatus OccupancyStatus   @default(VACANT)
+  visibility      ListingVisibility @default(PUBLIC)
 
   // Pricing / leasing fields (overrides)
-  listingPrice               Decimal?
-  monthlyRent                Decimal?
-  securityDeposit            Decimal?
-  amountRefundable           Decimal?
-  minLeaseDuration           LeaseDuration?
-  maxLeaseDuration           LeaseDuration?
+  listingPrice     Decimal?
+  monthlyRent      Decimal?
+  securityDeposit  Decimal?
+  amountRefundable Decimal?
+  minLeaseDuration LeaseDuration?
+  maxLeaseDuration LeaseDuration?
 
   // Availability & lifecycle dates
-  listedAt                   DateTime            @default(now())
-  availableFrom              DateTime?
-  expiresAt                  DateTime?
-  archivedAt                 DateTime?
-  updatedAt                  DateTime            @updatedAt
-  createdAt                  DateTime            @default(now())
+  listedAt      DateTime  @default(now())
+  availableFrom DateTime?
+  expiresAt     DateTime?
+  archivedAt    DateTime?
+  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
 
   // Visibility / meta
-  isActive                   Boolean             @default(true)
-  petsAllowed                Boolean             @default(false)
-  petCategory                String[]            @default([])
+  isActive                   Boolean  @default(true)
+  petsAllowed                Boolean  @default(false)
+  petCategory                String[] @default([])
   applicationFee             Decimal?
-  onlineApplicationAvailable Boolean             @default(false)
+  onlineApplicationAvailable Boolean  @default(false)
 
   // External metadata
-  externalListingUrl         String?
-  source                     String?
+  externalListingUrl String?
+  source             String?
 
   // Free-form description or overrides for what appears on the listing
-  title                      String?
-  description                String?
+  title       String?
+  description String?
 
   @@index([propertyId])
   @@index([unitId])
@@ -721,20 +726,20 @@ model Listing {
 
 // --- APPLICATION MODELS ---
 model Application {
-  id                  String              @id @default(uuid())
+  id              String            @id @default(uuid())
   // The terms the applicant is applying for
-  leasing             PropertyLeasing     @relation(fields: [leasingId], references: [id], onDelete: Cascade)
-  leasingId           String
+  leasing         PropertyLeasing   @relation(fields: [leasingId], references: [id], onDelete: Cascade)
+  leasingId       String
   // The user who invited the applicant (Property Manager)
-  invitedBy           User?               @relation("ApplicationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
-  invitedById         String?
-  status              ApplicationStatus   @default(DRAFT)
-  applicationDate     DateTime            @default(now())
-  moveInDate          DateTime
-  bio                 String?
-  imageUrl            String?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  invitedBy       User?             @relation("ApplicationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedById     String?
+  status          ApplicationStatus @default(DRAFT)
+  applicationDate DateTime          @default(now())
+  moveInDate      DateTime
+  bio             String?
+  imageUrl        String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   applicants          Applicant[]
   occupants           Occupant[]
@@ -752,82 +757,82 @@ model Application {
 }
 
 model Applicant {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String
-  firstName       String
-  middleName      String?
-  lastName        String
-  email           String
-  phoneNumber     String
-  dateOfBirth     DateTime
-  isPrimary       Boolean     @default(true) // Is this the primary applicant?
+  id            String      @id @default(uuid())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  firstName     String
+  middleName    String?
+  lastName      String
+  email         String
+  phoneNumber   String
+  dateOfBirth   DateTime
+  isPrimary     Boolean     @default(true) // Is this the primary applicant?
 
   @@index([applicationId])
   @@map("applicants")
 }
 
 model Occupant {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String
-  name            String
-  email           String?
-  phoneNumber     String?
-  dateOfBirth     DateTime
-  relationship    String
+  id            String      @id @default(uuid())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  name          String
+  email         String?
+  phoneNumber   String?
+  dateOfBirth   DateTime
+  relationship  String
 
   @@index([applicationId])
   @@map("occupants")
 }
 
 model Pet {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String
-  type            String
-  name            String
-  weight          Decimal?
-  breed           String
-  photoUrl        String?
+  id            String      @id @default(uuid())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  type          String
+  name          String
+  weight        Decimal?
+  breed         String
+  photoUrl      String?
 
   @@index([applicationId])
   @@map("pets")
 }
 
 model Vehicle {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String
-  type            String
-  make            String
-  model           String
-  year            Int
-  color           String
-  licensePlate    String
-  registeredIn    String
+  id            String      @id @default(uuid())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  type          String
+  make          String
+  model         String
+  year          Int
+  color         String
+  licensePlate  String
+  registeredIn  String
 
   @@index([applicationId])
   @@map("vehicles")
 }
 
 model ResidenceHistory {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String
-  residenceType   ResidenceType
-  monthlyRent     Decimal?
-  moveInDate      DateTime
-  moveOutDate     DateTime?
-  landlordName    String
-  landlordEmail   String
-  landlordPhone   String
-  address         String
-  city            String
-  state           String
-  zipCode         String
-  country         String
-  additionalInfo  String?
+  id             String        @id @default(uuid())
+  application    Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId  String
+  residenceType  ResidenceType
+  monthlyRent    Decimal?
+  moveInDate     DateTime
+  moveOutDate    DateTime?
+  landlordName   String
+  landlordEmail  String
+  landlordPhone  String
+  address        String
+  city           String
+  state          String
+  zipCode        String
+  country        String
+  additionalInfo String?
 
   @@index([applicationId])
   @@map("residence_history")
@@ -852,43 +857,43 @@ model IncomeDetail {
 }
 
 model EmergencyContact {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String
-  contactName     String
-  phoneNumber     String
-  email           String
-  relationship    String
-  details         String?
+  id            String      @id @default(uuid())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  contactName   String
+  phoneNumber   String
+  email         String
+  relationship  String
+  details       String?
 
   @@index([applicationId])
   @@map("emergency_contacts")
 }
 
 model ReferenceContact {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String
-  contactName     String
-  phoneNumber     String
-  email           String
-  relationship    String
-  yearsKnown      Int
+  id            String      @id @default(uuid())
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId String
+  contactName   String
+  phoneNumber   String
+  email         String
+  relationship  String
+  yearsKnown    Int
 
   @@index([applicationId])
   @@map("reference_contacts")
 }
 
 model BackgroundQuestion {
-  id              String      @id @default(uuid())
-  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  applicationId   String      @unique
-  smoke           Boolean
-  militaryMember  Boolean
-  criminalRecord  Boolean
-  bankruptcy      Boolean
-  refusedRent     Boolean
-  evicted         Boolean
+  id             String      @id @default(uuid())
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  applicationId  String      @unique
+  smoke          Boolean
+  militaryMember Boolean
+  criminalRecord Boolean
+  bankruptcy     Boolean
+  refusedRent    Boolean
+  evicted        Boolean
 
   @@map("background_questions")
 }
