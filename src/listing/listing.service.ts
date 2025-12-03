@@ -76,13 +76,35 @@ export class ListingService {
       createListingDto.listingType ||
       (property.propertyType === 'MULTI' ? 'UNIT' : 'ENTIRE_PROPERTY');
 
-    // Determine unitId if property is MULTI and unitId is not provided
+    // Determine unitId - enforce explicit selection for MULTI properties
     let unitId = createListingDto.unitId;
-    if (property.propertyType === 'MULTI' && !unitId && property.units.length > 0) {
-      // If no unitId specified, use the first unit (or could throw error)
-      // For now, we'll require unitId to be provided for MULTI properties
-      if (property.units.length === 1) {
-        unitId = property.units[0].id;
+    if (property.propertyType === 'MULTI') {
+      // For MULTI properties, unitId must be explicitly provided
+      if (!unitId) {
+        // Check if there are any units available
+        if (!property.units || property.units.length === 0) {
+          throw new BadRequestException(
+            `Cannot create listing for MULTI property ${createListingDto.propertyId}: property has no units. Please create units first.`,
+          );
+        }
+        
+        // Only auto-assign if there is exactly one unit
+        if (property.units.length === 1) {
+          unitId = property.units[0].id;
+        } else {
+          // Multiple units exist - require explicit selection
+          throw new BadRequestException(
+            `unitId is required for MULTI property ${createListingDto.propertyId}. This property has ${property.units.length} unit(s). Please specify which unit to list.`,
+          );
+        }
+      } else {
+        // Validate that the provided unitId exists for this property
+        const unitExists = property.units.some(unit => unit.id === unitId);
+        if (!unitExists) {
+          throw new BadRequestException(
+            `Unit with ID ${unitId} does not belong to property ${createListingDto.propertyId}`,
+          );
+        }
       }
     }
 
@@ -95,6 +117,11 @@ export class ListingService {
       occupancyStatus: createListingDto.occupancyStatus || 'VACANT',
       visibility: createListingDto.visibility || 'PUBLIC',
       // Pricing from leasing (can be overridden by DTO)
+      listingPrice: createListingDto.listingPrice !== undefined
+        ? (createListingDto.listingPrice !== null
+            ? new Decimal(createListingDto.listingPrice)
+            : null)
+        : null,
       monthlyRent: createListingDto.monthlyRent
         ? new Decimal(createListingDto.monthlyRent)
         : leasing.monthlyRent,
@@ -254,6 +281,13 @@ export class ListingService {
 
     if (updateListingDto.visibility !== undefined) {
       updateData.visibility = updateListingDto.visibility as any;
+    }
+
+    if (updateListingDto.listingPrice !== undefined) {
+      updateData.listingPrice =
+        updateListingDto.listingPrice !== null
+          ? new Decimal(updateListingDto.listingPrice)
+          : null;
     }
 
     if (updateListingDto.monthlyRent !== undefined) {

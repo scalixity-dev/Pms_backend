@@ -200,45 +200,63 @@ export class AuthService {
     existingDeviceToken?: string,
   ): Promise<{ deviceToken: string; deviceId: string }> {
     let deviceToken: string;
-    let tokenHash: string;
     const tokenExpiresAt = addDays(new Date(), this.DEVICE_TOKEN_EXPIRY_DAYS);
 
     if (existingDeviceToken) {
-      // Reuse existing token from cookie - hash it and use for this user
+      // Reuse existing token from cookie - verify against stored hashes
       deviceToken = existingDeviceToken;
-      tokenHash = await this.hashDeviceToken(existingDeviceToken);
-    } else {
-      // Generate new token
-      deviceToken = this.generateDeviceToken();
-      tokenHash = await this.hashDeviceToken(deviceToken);
-    }
+      
+      // Query all devices for this user to find a matching token hash
+      const userDevices = await this.prisma.device.findMany({
+        where: {
+          userId,
+          deviceTokenHash: { not: null },
+        },
+      });
 
-    // Check if device with this token hash already exists for this user
-    const existingDevice = await this.prisma.device.findFirst({
-      where: {
-        userId,
-        deviceTokenHash: tokenHash,
-      },
-    });
+      // Iterate through devices and verify the token against stored hashes
+      for (const device of userDevices) {
+        if (!device.deviceTokenHash) continue;
 
-    let deviceId: string;
+        const isMatch = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
+        if (isMatch) {
+          // Found matching device - update and reuse it
+          await this.prisma.device.update({
+            where: { id: device.id },
+            data: {
+              ipAddress,
+              userAgent,
+              deviceFingerprint,
+              tokenExpiresAt,
+              isRevoked: false,
+              isVerified: true,
+              lastSeenAt: new Date(),
+            },
+          });
+          return { deviceToken, deviceId: device.id };
+        }
+      }
 
-    if (existingDevice) {
-      // Update existing device
-      await this.prisma.device.update({
-        where: { id: existingDevice.id },
+      // No matching device found - create new device with hashed token
+      const tokenHash = await this.hashDeviceToken(deviceToken);
+      const newDevice = await this.prisma.device.create({
         data: {
+          userId,
           ipAddress,
           userAgent,
           deviceFingerprint,
+          deviceTokenHash: tokenHash,
           tokenExpiresAt,
-          isRevoked: false,
           isVerified: true,
-          lastSeenAt: new Date(),
+          isRevoked: false,
         },
       });
-      deviceId = existingDevice.id;
+      return { deviceToken, deviceId: newDevice.id };
     } else {
+      // Generate new token
+      deviceToken = this.generateDeviceToken();
+      const tokenHash = await this.hashDeviceToken(deviceToken);
+
       // Create new device with token hash
       const newDevice = await this.prisma.device.create({
         data: {
@@ -252,10 +270,8 @@ export class AuthService {
           isRevoked: false,
         },
       });
-      deviceId = newDevice.id;
+      return { deviceToken, deviceId: newDevice.id };
     }
-
-    return { deviceToken, deviceId };
   }
 
   /**
