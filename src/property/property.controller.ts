@@ -17,6 +17,8 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Express } from 'express';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { PropertyService } from './property.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
@@ -83,7 +85,7 @@ export class PropertyController {
     }
 
     const payloads = parsePropertyExcelBuffer(file.buffer);
-    
+
     const results = {
       total: payloads.length,
       successful: 0,
@@ -91,15 +93,44 @@ export class PropertyController {
       errors: [] as Array<{ row: number; error: string }>,
     };
 
-    for (let i = 0; i < payloads.length; i++) {
+    for (let i = 0; i < payloads.length; i += 1) {
+      const rowNumber = i + 2; // +1 for header row, +1 for 1-based index
+      const rawPayload = payloads[i];
+
       try {
-        await this.propertyService.create(payloads[i] as CreatePropertyDto, userId);
-        results.successful++;
+        const dto = plainToInstance(CreatePropertyDto, rawPayload);
+        const validationErrors = await validate(dto);
+
+        if (validationErrors.length > 0) {
+          const messages: string[] = [];
+
+          for (const err of validationErrors) {
+            if (err.constraints) {
+              messages.push(...Object.values(err.constraints));
+            }
+          }
+
+          const message =
+            messages.join('; ') || 'Validation failed for this row';
+
+          results.failed += 1;
+          results.errors.push({
+            row: rowNumber,
+            error: message,
+          });
+          continue;
+        }
+
+        await this.propertyService.create(dto, userId);
+        results.successful += 1;
       } catch (error) {
-        results.failed++;
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+
+        results.failed += 1;
         results.errors.push({
-          row: 1,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          row: rowNumber,
+          error: `Row ${rowNumber}: ${message}`,
         });
       }
     }

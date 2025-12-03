@@ -86,6 +86,10 @@ interface ExcelRow {
 
 // ===== Helpers =====
 
+const FILE_TYPES = ['PDF', 'DOC', 'DOCX', 'XLS', 'XLSX', 'IMAGE', 'OTHER'] as const;
+const RIBBON_TYPES = ['NONE', 'CHAT', 'CUSTOM'] as const;
+const PROPERTY_STATUSES = ['ACTIVE', 'INACTIVE', 'ARCHIVED'] as const;
+
 function parseNumber(value: string | number | undefined): number | undefined {
   if (value === undefined || value === null) return undefined;
   const num = typeof value === 'number' ? value : Number(String(value).trim());
@@ -109,6 +113,33 @@ function splitCsv(value: string | undefined): string[] | undefined {
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
   return parts.length > 0 ? parts : undefined;
+}
+
+function parseEnumValue<T extends readonly string[]>(
+  rawValue: string | undefined,
+  allowedValues: T,
+  fieldName: string,
+  defaultValue: T[number],
+): T[number] {
+  if (!rawValue) {
+    return defaultValue;
+  }
+
+  const normalized = rawValue.trim().toUpperCase();
+  const match = allowedValues.find((value) => value === normalized);
+
+  if (!match) {
+    // For now we do not throw, we fall back to default and rely on DTO validation later if needed
+    // eslint-disable-next-line no-console
+    console.warn(
+      `Invalid value "${rawValue}" for ${fieldName}. Allowed values are: ${allowedValues.join(
+        ', ',
+      )}. Falling back to default "${defaultValue}".`,
+    );
+    return defaultValue;
+  }
+
+  return match;
 }
 
 // ===== Mapping one Excel row -> CreatePropertyRequest =====
@@ -170,8 +201,14 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
   const attachmentDescriptions = splitCsv(row['Attachment Descriptions']) ?? [];
   const attachments: CreatePropertyAttachmentDto[] = attachmentUrls.map(
     (url, index) => {
-      const type =
-        (attachmentTypes[index]?.toUpperCase() as FileType) ?? 'OTHER';
+      const rawType = attachmentTypes[index];
+      const safeType = parseEnumValue(
+        rawType,
+        FILE_TYPES,
+        'Attachment File Type',
+        'OTHER',
+      );
+      const type = safeType as FileType;
       const description = attachmentDescriptions[index];
       return {
         fileUrl: url,
@@ -313,7 +350,12 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
     coverPhotoUrl: row['Cover Photo URL'],
     youtubeUrl: row['YouTube URL'],
     ribbonType: row['Ribbon Type']
-      ? (row['Ribbon Type'].trim().toUpperCase() as RibbonType)
+      ? (parseEnumValue(
+          row['Ribbon Type'],
+          RIBBON_TYPES,
+          'Ribbon Type',
+          'NONE',
+        ) as RibbonType)
       : undefined,
     ribbonTitle: row['Ribbon Title'],
 
@@ -324,7 +366,12 @@ function mapExcelRowToPayload(row: ExcelRow): CreatePropertyRequest {
     displayPhonePublicly: parseBoolean(row['Display Phone Publicly']),
 
     status: row.Status
-      ? (row.Status.trim().toUpperCase() as PropertyStatus)
+      ? (parseEnumValue(
+          row.Status,
+          PROPERTY_STATUSES,
+          'Property Status',
+          'ACTIVE',
+        ) as PropertyStatus)
       : undefined,
 
     amenities: amenitiesBase,
