@@ -14,6 +14,7 @@ import { EquipmentModule } from './equipment/equipment.module';
 import { MaintenanceRequestModule } from './maintenance-request/maintenance-request.module';
 import { ServiceProviderModule } from './service-provider/service-provider.module';
 import { KeysAndLocksModule } from './keys-and-locks/keys-and-locks.module';
+import { ListingModule } from './listing/listing.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { KeysAndLocksModule } from './keys-and-locks/keys-and-locks.module';
     UsersModule,
     PropertyModule,
     LeasingModule,
+    ListingModule,
     UploadModule,
     ApplicationModule,
     EquipmentModule,
