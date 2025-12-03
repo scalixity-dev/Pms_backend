@@ -90,8 +90,9 @@ export class AuthController {
     const ipAddress = this.getIpAddress(req);
     const userAgent = this.getUserAgent(req);
     const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
+    const deviceToken = req.cookies?.device_token as string | undefined;
 
-    const result = await this.authService.login(loginDto, ipAddress, userAgent, deviceFingerprint);
+    const result = await this.authService.login(loginDto, ipAddress, userAgent, deviceFingerprint, deviceToken);
 
     // Only set JWT cookie if token exists (i.e., device is verified)
     if (result.token) {
@@ -101,6 +102,17 @@ export class AuthController {
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: '/', // Ensure cookie is available for all paths
+      });
+    }
+
+    // Set or update device_token cookie if provided
+    if (result.deviceToken) {
+      res.cookie('device_token', result.deviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
+        path: '/',
       });
     }
 
@@ -141,8 +153,27 @@ export class AuthController {
     @Res() res: Response,
   ) {
     const ipAddress = this.getIpAddress(req);
+    const userAgent = this.getUserAgent(req);
     const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
-    const result = await this.authService.verifyDeviceOtp(userId, verifyOtpDto.code, ipAddress, deviceFingerprint);
+    const existingDeviceToken = req.cookies?.device_token as string | undefined;
+    
+    // If existing device token exists, try to find the device ID
+    let existingDeviceId: string | undefined;
+    if (existingDeviceToken) {
+      const tokenValidation = await this.authService.validateDeviceToken(userId, existingDeviceToken, deviceFingerprint);
+      if (tokenValidation.isValid && tokenValidation.deviceId) {
+        existingDeviceId = tokenValidation.deviceId;
+      }
+    }
+
+    const result = await this.authService.verifyDeviceOtp(
+      userId,
+      verifyOtpDto.code,
+      ipAddress,
+      userAgent,
+      deviceFingerprint,
+      existingDeviceId,
+    );
     
     // Set JWT as HTTP-only cookie
     res.cookie('access_token', result.token, {
@@ -150,6 +181,16 @@ export class AuthController {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+    });
+
+    // Set device_token cookie
+    res.cookie('device_token', result.deviceToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
+      path: '/',
     });
 
     return res.json({
@@ -281,6 +322,7 @@ export class AuthController {
     const ipAddress = this.getIpAddress(req);
     const userAgent = this.getUserAgent(req);
     const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
+    const existingDeviceToken = req.cookies?.device_token as string | undefined;
 
     const result = await this.authService.handleOAuthCallback(
       'GOOGLE',
@@ -290,6 +332,7 @@ export class AuthController {
       ipAddress,
       userAgent,
       deviceFingerprint,
+      existingDeviceToken, // Pass existing token if cookie exists
     );
 
     // Set JWT as HTTP-only cookie
@@ -299,6 +342,17 @@ export class AuthController {
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
+
+    // Only set device_token cookie if it doesn't already exist
+    if (!existingDeviceToken && result.deviceToken) {
+      res.cookie('device_token', result.deviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
+        path: '/',
+      });
+    }
 
     // Redirect to frontend with success
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -322,6 +376,7 @@ export class AuthController {
     const ipAddress = this.getIpAddress(req);
     const userAgent = this.getUserAgent(req);
     const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
+    const existingDeviceToken = req.cookies?.device_token as string | undefined;
 
     const result = await this.authService.handleOAuthCallback(
       'FACEBOOK',
@@ -331,6 +386,7 @@ export class AuthController {
       ipAddress,
       userAgent,
       deviceFingerprint,
+      existingDeviceToken, // Pass existing token if cookie exists
     );
 
     // Set JWT as HTTP-only cookie
@@ -340,6 +396,17 @@ export class AuthController {
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
+
+    // Only set device_token cookie if it doesn't already exist
+    if (!existingDeviceToken && result.deviceToken) {
+      res.cookie('device_token', result.deviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
+        path: '/',
+      });
+    }
 
     // Redirect to frontend with success
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -363,6 +430,7 @@ export class AuthController {
     const ipAddress = this.getIpAddress(req);
     const userAgent = this.getUserAgent(req);
     const deviceFingerprint = req.headers['x-device-fingerprint'] as string | undefined;
+    const existingDeviceToken = req.cookies?.device_token as string | undefined;
 
     const result = await this.authService.handleOAuthCallback(
       'APPLE',
@@ -372,6 +440,7 @@ export class AuthController {
       ipAddress,
       userAgent,
       deviceFingerprint,
+      existingDeviceToken, // Pass existing token if cookie exists
     );
 
     // Set JWT as HTTP-only cookie
@@ -381,6 +450,17 @@ export class AuthController {
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
+
+    // Only set device_token cookie if it doesn't already exist
+    if (!existingDeviceToken && result.deviceToken) {
+      res.cookie('device_token', result.deviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days
+        path: '/',
+      });
+    }
 
     // Redirect to frontend with success
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
