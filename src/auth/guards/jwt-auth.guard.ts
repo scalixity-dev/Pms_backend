@@ -8,12 +8,14 @@ import { Request } from 'express';
 import { JwtService } from '../jwt.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserRole, SubscriptionStatus } from '@prisma/client';
+import { UserCacheService } from '../services/user-cache.service';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly userCache: UserCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -32,26 +34,34 @@ export class JwtAuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid token payload');
       }
 
-      // Verify user exists and is active
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.userId },
-        include: {
-          subscriptions: {
-            where: {
-              status: {
-                in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING],
-              },
-            },
-            orderBy: {
-              createdAt: 'desc',
-            },
-            take: 1,
-          },
-        },
-      });
+      // Verify user exists and is active and caching logic too
+      const cachedData = this.userCache.get(payload.userId);
+      let user = cachedData?.user;
 
       if (!user) {
-        throw new UnauthorizedException('User not found');
+        const dbUser = await this.prisma.user.findUnique({
+          where: { id: payload.userId },
+          include: {
+            subscriptions: {
+              where: {
+                status: {
+                  in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING],
+                },
+              },
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 1,
+            },
+          },
+        });
+
+        if (!dbUser) {
+          throw new UnauthorizedException('User not found');
+        }
+
+        user = dbUser;
+        this.userCache.set(payload.userId, user);
       }
 
       // Get the route path to determine if checks should be skipped

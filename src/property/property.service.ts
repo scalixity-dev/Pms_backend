@@ -120,7 +120,7 @@ const propertyRelationsInclude = {
 
 @Injectable()
 export class PropertyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async create(createPropertyDto: CreatePropertyDto, userId: string) {
     // Use the authenticated user's ID as managerId
@@ -310,7 +310,48 @@ export class PropertyService {
       where: {
         managerId: userId,
       },
-      include: include as unknown as Prisma.PropertyInclude,
+      select: {
+        id: true,
+        propertyName: true,
+        propertyType: true,
+        status: true,
+        marketRent: true,
+        coverPhotoUrl: true,
+        address: {
+          select: {
+            streetAddress: true,
+            city: true,
+            stateRegion: true,
+            zipCode: true,
+            country: true,
+          },
+        },
+        photos: {
+          select: {
+            id: true,
+            photoUrl: true,
+            isPrimary: true,
+          },
+        },
+        leasing: {
+          select: {
+            monthlyRent: true,
+          },
+        },
+        singleUnitDetails: {
+          select: {
+            beds: true,
+            baths: true,
+          },
+        },
+        units: {
+          select: {
+            id: true,
+            unitName: true,
+          },
+          take: 1,
+        },
+      },
       orderBy: {
         createdAt: 'desc',
       },
