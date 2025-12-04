@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
   HttpCode,
   HttpStatus,
   Req,
@@ -50,13 +51,18 @@ export class PropertyController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  async findAll(@Req() req: AuthenticatedRequest) {
+  async findAll(
+    @Req() req: AuthenticatedRequest,
+    @Query('includeListings') includeListings?: string,
+  ) {
     const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
+    // Parse query parameter - only include listings if explicitly requested
+    const shouldIncludeListings = includeListings === 'true';
     // Return only properties belonging to the authenticated user
-    return this.propertyService.findAll(userId);
+    return this.propertyService.findAll(userId, shouldIncludeListings);
   }
 
   @Get(':id')
