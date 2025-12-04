@@ -9,6 +9,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { FacebookStrategy } from './strategies/facebook.strategy';
 import { AppleStrategy } from './strategies/apple.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { UserCacheService } from './services/user-cache.service';
 
 @Module({
   imports: [
@@ -21,10 +22,11 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     AuthService,
     JwtService,
     JwtAuthGuard,
+    UserCacheService,
     GoogleStrategy,
     FacebookStrategy,
     AppleStrategy,
   ],
-  exports: [AuthService, JwtService],
+  exports: [AuthService, JwtService, UserCacheService],
 })
 export class AuthModule {}
