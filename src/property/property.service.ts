@@ -21,6 +21,54 @@ type AmenitiesDataInput = {
   singleUnitDetailId?: string;
 };
 
+// Lightweight include for list view (without heavy relations)
+const propertyListInclude = {
+  manager: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+    },
+  },
+  address: true,
+  amenities: true,
+  photos: {
+    select: {
+      id: true,
+      photoUrl: true,
+      isPrimary: true,
+    },
+    take: 1, // Only get first photo for list view
+  },
+  singleUnitDetails: {
+    select: {
+      beds: true,
+      baths: true,
+    },
+  },
+  leasing: {
+    select: {
+      id: true,
+      monthlyRent: true,
+      securityDeposit: true,
+      amountRefundable: true,
+      dateAvailable: true,
+      minLeaseDuration: true,
+      maxLeaseDuration: true,
+      description: true,
+      petsAllowed: true,
+      petCategory: true,
+      petDeposit: true,
+      petFee: true,
+      petDescription: true,
+      onlineRentalApplication: true,
+      requireApplicationFee: true,
+      applicationFee: true,
+    },
+  },
+} as const;
+
+// Full include with all relations (for detail view)
 const propertyRelationsInclude = {
   manager: {
     select: {
@@ -55,6 +103,17 @@ const propertyRelationsInclude = {
           amenities: true,
         },
       },
+    },
+  },
+  listings: {
+    select: {
+      id: true,
+      listingStatus: true,
+      isActive: true,
+      createdAt: true,
+    },
+    orderBy: {
+      createdAt: 'desc',
     },
   },
 } as const;
@@ -241,7 +300,12 @@ export class PropertyService {
     return this.findOne(property.id, managerId);
   }
 
-  async findAll(userId: string) {
+  async findAll(userId: string, includeListings: boolean = false) {
+    // Use lightweight include by default, add listings only if requested
+    const include = includeListings
+      ? propertyRelationsInclude
+      : propertyListInclude;
+
     const properties = await this.prisma.property.findMany({
       where: {
         managerId: userId,

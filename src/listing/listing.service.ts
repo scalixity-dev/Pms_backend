@@ -20,10 +20,34 @@ const listingInclude = {
         },
       },
       address: true,
-      leasing: true,
+      amenities: true,
+      photos: true,
+      singleUnitDetails: {
+        include: {
+          amenities: true,
+        },
+      },
+      leasing: {
+        include: {
+          unit: {
+            include: {
+              amenities: true,
+            },
+          },
+          singleUnitDetail: {
+            include: {
+              amenities: true,
+            },
+          },
+        },
+      },
     },
   },
-  unit: true,
+  unit: {
+    include: {
+      amenities: true,
+    },
+  },
 } as const;
 
 @Injectable()
