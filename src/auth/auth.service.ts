@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { JwtService } from './jwt.service';
+import { UserCacheService } from './services/user-cache.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -20,13 +21,14 @@ import { addYears, addMonths, addDays } from 'date-fns';
 export class AuthService {
   private readonly OTP_EXPIRY_MINUTES = 10;
   private readonly OTP_LENGTH = 6;
-  private readonly DEVICE_TOKEN_EXPIRY_DAYS = 90; // Device token expires after 90 days
-  private readonly DEVICE_TOKEN_LENGTH = 32; // 32 bytes = 64 hex characters
+  private readonly DEVICE_TOKEN_EXPIRY_DAYS = 90;
+  private readonly DEVICE_TOKEN_LENGTH = 32;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly jwtService: JwtService,
+    private readonly userCache: UserCacheService,
   ) {}
 
   /**
@@ -612,6 +614,8 @@ export class AuthService {
         data: { isEmailVerified: true },
       });
     });
+
+    this.userCache.delete(userId);
   }
 
   /**
@@ -1076,8 +1080,7 @@ export class AuthService {
     
     // nextBillingDate is the same as endDate
     const nextBillingDate = endDate;
-
-    // Create subscription and activate account in a transaction
+    // Create subscription and activate account in a transaction  
     await this.prisma.$transaction(async (tx) => {
       // Create subscription with TRIALING status (14-day trial)
       await tx.subscription.create({
@@ -1090,7 +1093,6 @@ export class AuthService {
           nextBillingDate,
         },
       });
-
       // Activate account (don't auto-verify email - user needs to verify OTP)
       await tx.user.update({
         where: { id: userId },
@@ -1101,6 +1103,8 @@ export class AuthService {
         },
       });
     });
+
+    this.userCache.delete(userId);
 
     // Send email verification OTP after activation
     try {
@@ -1159,7 +1163,6 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // Update user profile
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -1171,6 +1174,8 @@ export class AuthService {
         address: address || user.address,
       },
     });
+
+    this.userCache.delete(userId);
 
     return {
       id: updatedUser.id,
