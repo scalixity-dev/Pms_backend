@@ -10,6 +10,7 @@ import { FacebookStrategy } from './strategies/facebook.strategy';
 import { AppleStrategy } from './strategies/apple.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { UserCacheService } from './services/user-cache.service';
+import { OtpService } from './services/otp.service';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UserCacheService } from './services/user-cache.service';
     JwtService,
     JwtAuthGuard,
     UserCacheService,
+    OtpService,
     GoogleStrategy,
     FacebookStrategy,
     AppleStrategy,

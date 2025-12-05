@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { JwtService } from './jwt.service';
 import { UserCacheService } from './services/user-cache.service';
+import { OtpService } from './services/otp.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -19,7 +20,7 @@ import { addYears, addMonths, addDays } from 'date-fns';
 
 @Injectable()
 export class AuthService {
-  private readonly OTP_EXPIRY_MINUTES = 10;
+  private readonly OTP_EXPIRY_MINUTES = 5;
   private readonly OTP_LENGTH = 6;
   private readonly DEVICE_TOKEN_EXPIRY_DAYS = 90;
   private readonly DEVICE_TOKEN_LENGTH = 32;
@@ -29,6 +30,7 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly jwtService: JwtService,
     private readonly userCache: UserCacheService,
+    private readonly otpService: OtpService,
   ) {}
 
   /**
@@ -358,31 +360,12 @@ export class AuthService {
     ipAddress?: string,
   ): Promise<string> {
     const otpCode = this.generateOtp();
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + this.OTP_EXPIRY_MINUTES);
 
-    // Invalidate any existing unused OTPs of the same type
-    await this.prisma.otp.updateMany({
-      where: {
-        userId,
-        type,
-        isUsed: false,
-      },
-      data: {
-        isUsed: true,
-      },
-    });
+    const { success, usedRedis } = await this.otpService.createOtp(userId, otpCode, type);
 
-    // Create new OTP
-    await this.prisma.otp.create({
-      data: {
-        userId,
-        code: otpCode,
-        type,
-        expiresAt,
-        isUsed: false,
-      },
-    });
+    if (!success) {
+      throw new Error('Failed to store OTP');
+    }
 
     // Send OTP via email
     if (type === OtpType.EMAIL_VERIFICATION) {
@@ -477,27 +460,14 @@ export class AuthService {
         },
       });
 
-      // Create email verification OTP using shared method
-      const otpCode = this.generateOtp();
-      const expiresAt = new Date();
-      expiresAt.setMinutes(expiresAt.getMinutes() + this.OTP_EXPIRY_MINUTES);
-
-      await tx.otp.create({
-        data: {
-          userId: newUser.id,
-          code: otpCode,
-          type: OtpType.EMAIL_VERIFICATION,
-          expiresAt,
-          isUsed: false,
-        },
-      });
-
-      return { newUser, otpCode };
+      return { newUser };
     });
 
-    // Send OTP email (outside transaction to avoid rollback on email failure)
+    // Create and send OTP email (outside transaction to avoid rollback on email failure)
     try {
-      await this.emailService.sendOtpEmail(email, user.otpCode, fullName);
+      const otpCode = this.generateOtp();
+      await this.otpService.createOtp(user.newUser.id, otpCode, OtpType.EMAIL_VERIFICATION);
+      await this.emailService.sendOtpEmail(email, otpCode, fullName);
     } catch (error) {
       // Log error but don't fail registration
       console.error('Failed to send OTP email:', error);
@@ -550,8 +520,6 @@ export class AuthService {
       throw new BadRequestException('OTP code must be exactly 6 digits');
     }
 
-    const now = new Date();
-
     // Check if user exists
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -562,57 +530,22 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // Find matching OTP
-    const otp = await this.prisma.otp.findFirst({
-      where: {
-        userId: userId,
-        code: code.trim(),
-        type: OtpType.EMAIL_VERIFICATION,
-        isUsed: false,
-        expiresAt: {
-          gt: now,
-        },
-      },
-      orderBy: {
-        createdAt: 'desc', // Get the most recent OTP
-      },
-    });
+    const result = await this.otpService.verifyOtp(userId, code, OtpType.EMAIL_VERIFICATION);
 
-    if (!otp) {
-      // Check if OTP exists but is expired
-      const expiredOtp = await this.prisma.otp.findFirst({
-        where: {
-          userId: userId,
-          code: code.trim(),
-          type: OtpType.EMAIL_VERIFICATION,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      });
-
-      if (expiredOtp) {
-        if (expiredOtp.isUsed) {
-          throw new BadRequestException('This OTP code has already been used. Please request a new code.');
-        } else if (expiredOtp.expiresAt <= now) {
-          throw new BadRequestException('This OTP code has expired. Please request a new code.');
-        }
+    if (!result.valid) {
+      if (result.expired) {
+        throw new BadRequestException('This OTP code has expired. Please request a new code.');
       }
-
+      if (result.alreadyUsed) {
+        throw new BadRequestException('This OTP code has already been used. Please request a new code.');
+      }
       throw new BadRequestException('Invalid OTP code. Please check the code and try again, or request a new code.');
     }
 
-    // Mark OTP as used and verify user email
-    await this.prisma.$transaction(async (tx) => {
-      await tx.otp.update({
-        where: { id: otp.id },
-        data: { isUsed: true },
-      });
-
-      await tx.user.update({
-        where: { id: userId },
-        data: { isEmailVerified: true },
-      });
+    // Verify user email
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { isEmailVerified: true },
     });
 
     this.userCache.delete(userId);
@@ -634,8 +567,6 @@ export class AuthService {
       throw new BadRequestException('OTP code must be exactly 6 digits');
     }
 
-    const now = new Date();
-
     // Check if user exists
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -646,51 +577,17 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    // Find matching OTP
-    const otp = await this.prisma.otp.findFirst({
-      where: {
-        userId: userId,
-        code: code.trim(),
-        type: OtpType.DEVICE_VERIFICATION,
-        isUsed: false,
-        expiresAt: {
-          gt: now,
-        },
-      },
-      orderBy: {
-        createdAt: 'desc', // Get the most recent OTP
-      },
-    });
+    const result = await this.otpService.verifyOtp(userId, code, OtpType.DEVICE_VERIFICATION);
 
-    if (!otp) {
-      // Check if OTP exists but is expired or used
-      const expiredOtp = await this.prisma.otp.findFirst({
-        where: {
-          userId: userId,
-          code: code.trim(),
-          type: OtpType.DEVICE_VERIFICATION,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      });
-
-      if (expiredOtp) {
-        if (expiredOtp.isUsed) {
-          throw new BadRequestException('This OTP code has already been used. Please request a new code.');
-        } else if (expiredOtp.expiresAt <= now) {
-          throw new BadRequestException('This OTP code has expired. Please request a new code.');
-        }
+    if (!result.valid) {
+      if (result.expired) {
+        throw new BadRequestException('This OTP code has expired. Please request a new code.');
       }
-
+      if (result.alreadyUsed) {
+        throw new BadRequestException('This OTP code has already been used. Please request a new code.');
+      }
       throw new BadRequestException('Invalid OTP code. Please check the code and try again, or request a new code.');
     }
-
-    // Mark OTP as used
-    await this.prisma.otp.update({
-      where: { id: otp.id },
-      data: { isUsed: true },
-    });
 
     // Create or update device token
     // If existingDeviceToken is provided (from cookie), reuse it instead of generating new one
