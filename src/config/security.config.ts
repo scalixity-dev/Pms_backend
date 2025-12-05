@@ -198,8 +198,26 @@ export function getCompressionConfig(configService: ConfigService) {
       if (req.headers['x-no-compression']) {
         return false;
       }
+
+      const contentType = res.getHeader('content-type') || '';
+      const path = req.path || '';
       
-      return true;
+      const compressibleTypes = [
+        'application/json',
+        'application/javascript',
+        'application/xml',
+        'text/html',
+        'text/css',
+        'text/javascript',
+        'text/plain',
+        'text/xml',
+        'application/vnd.api+json',
+      ];
+
+      const contentTypeMatches = compressibleTypes.some(type => contentType.includes(type));
+      const isApiRoute = path.startsWith('/api') || path.startsWith('/property') || path.startsWith('/auth') || path.startsWith('/listing');
+      
+      return contentTypeMatches || isApiRoute;
     },
     chunkSize: configService.get<number>('COMPRESSION_CHUNK_SIZE', 16 * 1024),
   };

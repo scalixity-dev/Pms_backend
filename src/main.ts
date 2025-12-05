@@ -78,19 +78,22 @@ async function bootstrap() {
   const compressionLoggingEnabled = configService.get<boolean>('COMPRESSION_LOGGING_ENABLED', true);
   
   if (compressionConfig.enabled) {
-    app.use(compression({
-      level: compressionConfig.level,
-      threshold: compressionConfig.threshold,
-      filter: compressionConfig.filter,
-      chunkSize: compressionConfig.chunkSize,
-    }));
-
+    // To disable compression logging:
+    //   1. Set COMPRESSION_LOGGING_ENABLED=false in .env (recommended)
+    //   2. Or comment out the if block below
     if (compressionLoggingEnabled) {
       app.use((req: any, res: any, next: any) => {
         const logger = new CompressionLoggerMiddleware();
         logger.use(req, res, next);
       });
     }
+
+    app.use(compression({
+      level: compressionConfig.level,
+      threshold: compressionConfig.threshold,
+      filter: compressionConfig.filter,
+      chunkSize: compressionConfig.chunkSize,
+    }));
     
     console.log(`Response compression enabled (level: ${compressionConfig.level}, threshold: ${compressionConfig.threshold} bytes)`);
     if (compressionLoggingEnabled) {
