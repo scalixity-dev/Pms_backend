@@ -220,6 +220,46 @@ enum KeyStatus {
   INACTIVE
 }
 
+enum PreferredBeds {
+  ANY
+  STUDIO
+  ONE
+  TWO
+  THREE
+  FOUR
+  FIVE_PLUS
+}
+
+enum PreferredBaths {
+  ANY
+  ONE
+  TWO
+  THREE
+  FOUR
+  FIVE_PLUS
+}
+
+enum TransactionStatus {
+  PENDING
+  PAID
+  OVERDUE
+  FAILED
+  CANCELLED
+}
+
+enum TransactionCategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionFrequency {
+  NONE
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
 // --- CORE MODELS ---
 model User {
   id               String   @id @default(uuid())
@@ -249,6 +289,48 @@ model User {
   // Maintenance Relations
   maintenanceRequests         MaintenanceRequest[]    @relation("ManagerMaintenanceRequests")
   assignedMaintenanceRequests MaintenanceAssignment[] @relation("AssignedMaintenanceRequests")
+  // Transactions where this user is the property manager
+  managedTransactions         Transaction[]           @relation("ManagerTransactions")
+}
+
+// --- TENANT MODELS ---
+
+model TenantUser {
+  id                     String                 @id @default(uuid())
+  role                   UserRole               @default(TENANT)
+  email                  String                 @unique
+  fullName               String
+  renterProfileLink      String
+  newPlace               Boolean?
+  landlordEmail          String?
+  preferredLocation      Boolean?
+  preferredRentals       String[]               @default([])
+  preferredBeds          PreferredBeds?
+  preferredBaths         PreferredBaths?
+  preferredMinRent       Decimal?
+  preferredMaxRent       Decimal?
+  preferredPetAllowance  Boolean?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  authIdentities         TenantAuthIdentity[]
+  transactions           Transaction[]          @relation("TenantTransactions")
+  leases                 Lease[]
+  maintenanceRequests    MaintenanceRequest[]
+  applications           Application[]
+}
+
+model TenantAuthIdentity {
+  id             String       @id @default(uuid())
+  tenant         TenantUser   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId       String
+  provider       AuthProvider
+  providerUserId String?
+  passwordHash   String?
+  lastLoginAt    DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([tenantId, provider])
 }
 
 model UserAuthIdentity {
@@ -364,6 +446,8 @@ model Property {
   equipment               Equipment[]
   maintenanceRequests     MaintenanceRequest[]
   keys                    Key[]
+  leases                  Lease[]
+  transactions            Transaction[]           @relation("PropertyTransactions")
 }
 
 model PropertyPhoto {
@@ -407,6 +491,7 @@ model Unit {
   equipment           Equipment[]
   maintenanceRequests MaintenanceRequest[]
   keys                Key[]
+  leases              Lease[]              @relation("UnitLeases")
 
   @@index([propertyId])
   @@map("units")
@@ -425,6 +510,7 @@ model SingleUnitDetail {
   equipment           Equipment[]
   maintenanceRequests MaintenanceRequest[]
   keys                Key[]
+  leases              Lease[]              @relation("SingleUnitDetailLeases")
 
   @@map("single_unit_details")
 }
@@ -483,6 +569,102 @@ model Key {
   @@map("keys")
 }
 
+// --- LEASES & TRANSACTIONS (TENANT RENT) ---
+
+model Lease {
+  id                 String            @id @default(uuid())
+  tenant             TenantUser        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId           String
+  property           Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId         String
+  unit               Unit?             @relation("UnitLeases", fields: [unitId], references: [id], onDelete: SetNull)
+  unitId             String?
+  singleUnitDetail   SingleUnitDetail? @relation("SingleUnitDetailLeases", fields: [singleUnitDetailId], references: [id], onDelete: SetNull)
+  singleUnitDetailId String?
+  startDate          DateTime
+  endDate            DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@index([unitId])
+  @@index([singleUnitDetailId])
+}
+
+// --- TRANSACTION / PAYMENT MODELS ---
+
+model TransactionCategory {
+  id          String                 @id @default(uuid())
+  name        String
+  type        TransactionCategoryType
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  transactions Transaction[]
+}
+
+model TransactionSchedule {
+  id          String               @id @default(uuid())
+  frequency   TransactionFrequency
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  transactions Transaction[]
+}
+
+model Transaction {
+  id                String              @id @default(uuid())
+  status            TransactionStatus   @default(PENDING)
+  dueDate           DateTime
+  amountTotal       Decimal
+  balanceRemaining  Decimal
+
+  // Category
+  category          TransactionCategory @relation(fields: [categoryId], references: [id])
+  categoryId        String
+
+  // Tenant renting the unit/property
+  tenant            TenantUser?         @relation("TenantTransactions", fields: [tenantId], references: [id])
+  tenantId          String?
+
+  // Property associated with the charge
+  property          Property?           @relation("PropertyTransactions", fields: [propertyId], references: [id])
+  propertyId        String?
+
+  // Property manager who owns/controls this property
+  propertyManager   User                @relation("ManagerTransactions", fields: [propertyManagerId], references: [id])
+  propertyManagerId String
+
+  // Schedule (recurring)
+  schedule          TransactionSchedule? @relation(fields: [scheduleId], references: [id])
+  scheduleId        String?
+
+  // Payments
+  payments          Payment[]
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([propertyId])
+  @@index([tenantId])
+  @@index([propertyManagerId])
+}
+
+model Payment {
+  id              String       @id @default(uuid())
+  transaction     Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  transactionId   String
+  paidAmount      Decimal
+  paidOn          DateTime
+  method          String?
+  createdAt       DateTime     @default(now())
+}
+
 // --- MAINTENANCE MODELS ---
 // Service Provider model for external vendors/contractors
 model ServiceProvider {
@@ -536,7 +718,9 @@ model MaintenanceRequest {
   status             MaintenanceStatus       @default(NEW)
   internalNotes      String?
 
-  // update and connect it with tenant table
+  // Optional tenant linked to this request
+  tenant            TenantUser?         @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  tenantId          String?
   tenantInformation String?
 
   requestedAt DateTime  @default(now())
@@ -554,6 +738,7 @@ model MaintenanceRequest {
   @@index([unitId])
   @@index([singleUnitDetailId])
   @@index([equipmentId])
+  @@index([tenantId])
   @@index([status])
   @@index([priority])
   @@index([requestedAt])
@@ -741,6 +926,10 @@ model Application {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
+  // Optional tenant linked to this application
+  tenant          TenantUser?       @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  tenantId        String?
+
   applicants          Applicant[]
   occupants           Occupant[]
   pets                Pet[]
@@ -753,6 +942,7 @@ model Application {
 
   @@index([leasingId])
   @@index([invitedById])
+  @@index([tenantId])
   @@map("applications")
 }
 
