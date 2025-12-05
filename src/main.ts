@@ -3,8 +3,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import compression from 'compression';
 import { ConfigService } from '@nestjs/config';
-import { getCorsConfig, getHelmetConfig, getRequestConfig } from './config/security.config';
+import { getCorsConfig, getHelmetConfig, getRequestConfig, getCompressionConfig } from './config/security.config';
+import { CompressionLoggerMiddleware } from './middleware/compression-logger.middleware';
 
 /**
  * Validate critical environment variables before application startup
@@ -72,6 +74,30 @@ async function bootstrap() {
   const corsConfig = getCorsConfig(configService);
   app.enableCors(corsConfig);
   
+  const compressionConfig = getCompressionConfig(configService);
+  const compressionLoggingEnabled = configService.get<boolean>('COMPRESSION_LOGGING_ENABLED', true);
+  
+  if (compressionConfig.enabled) {
+    app.use(compression({
+      level: compressionConfig.level,
+      threshold: compressionConfig.threshold,
+      filter: compressionConfig.filter,
+      chunkSize: compressionConfig.chunkSize,
+    }));
+
+    if (compressionLoggingEnabled) {
+      app.use((req: any, res: any, next: any) => {
+        const logger = new CompressionLoggerMiddleware();
+        logger.use(req, res, next);
+      });
+    }
+    
+    console.log(`Response compression enabled (level: ${compressionConfig.level}, threshold: ${compressionConfig.threshold} bytes)`);
+    if (compressionLoggingEnabled) {
+      console.log(`Compression logging enabled - will log compression stats for each request`);
+    }
+  }
+  
   // Configure request size limits and timeouts
   const requestConfig = getRequestConfig(configService);
   // Note: Request size limits are typically handled by the reverse proxy (nginx, etc.)
@@ -100,6 +126,7 @@ async function bootstrap() {
   console.log(`🚀 Application is running on: http://localhost:${port}`);
   console.log(`📦 Environment: ${nodeEnv}`);
   console.log(`🔒 Security features enabled: Rate Limiting, Helmet, CORS`);
+  console.log(`Performance features enabled: Response Compression`);
   if (isProduction) {
     console.log(`🌐 Frontend URL: https://pms.scalixity.com`);
   }

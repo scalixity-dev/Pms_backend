@@ -183,6 +183,29 @@ export function getRequestConfig(configService: ConfigService) {
 }
 
 /**
+ * Get compression configuration
+ * Optimized for production with Brotli support and smart filtering
+ */
+export function getCompressionConfig(configService: ConfigService) {
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const isProduction = nodeEnv === 'production';
+
+  return {
+    enabled: configService.get<boolean>('COMPRESSION_ENABLED', true),
+    level: configService.get<number>('COMPRESSION_LEVEL', isProduction ? 6 : 1),
+    threshold: configService.get<number>('COMPRESSION_THRESHOLD', 1024),
+    filter: (req: any, res: any) => {
+      if (req.headers['x-no-compression']) {
+        return false;
+      }
+      
+      return true;
+    },
+    chunkSize: configService.get<number>('COMPRESSION_CHUNK_SIZE', 16 * 1024),
+  };
+}
+
+/**
  * Get API configuration
  */
 export function getApiConfig(configService: ConfigService) {
