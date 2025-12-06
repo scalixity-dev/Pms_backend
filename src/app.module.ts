@@ -15,6 +15,7 @@ import { MaintenanceRequestModule } from './maintenance-request/maintenance-requ
 import { ServiceProviderModule } from './service-provider/service-provider.module';
 import { KeysAndLocksModule } from './keys-and-locks/keys-and-locks.module';
 import { ListingModule } from './listing/listing.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ListingModule } from './listing/listing.module';
     MaintenanceRequestModule,
     ServiceProviderModule,
     KeysAndLocksModule,
+    TasksModule,
   ],
   controllers: [AppController],
   providers: [AppService],
