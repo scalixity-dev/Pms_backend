@@ -25,6 +25,7 @@ import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { parsePropertyExcelBuffer } from './utils/propertyExcelImporter';
+import { QueueService } from '../queue/queue.service';
 
 // Extend Express Request to include user property from JwtAuthGuard
 interface AuthenticatedRequest extends Request {
@@ -41,7 +42,10 @@ interface AuthenticatedRequest extends Request {
 @Controller('property')
 @UseGuards(JwtAuthGuard)
 export class PropertyController {
-  constructor(private readonly propertyService: PropertyService) {}
+  constructor(
+    private readonly propertyService: PropertyService,
+    private readonly queueService: QueueService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -87,56 +91,73 @@ export class PropertyController {
 
     const payloads = parsePropertyExcelBuffer(file.buffer);
 
-    const results = {
-      total: payloads.length,
-      successful: 0,
-      failed: 0,
-      errors: [] as Array<{ row: number; error: string }>,
-    };
+    const validatedPayloads: CreatePropertyDto[] = [];
+    const validationErrors: Array<{ row: number; error: string }> = [];
 
     for (let i = 0; i < payloads.length; i += 1) {
-      const rowNumber = i + 2; // +1 for header row, +1 for 1-based index
+      const rowNumber = i + 2;
       const rawPayload = payloads[i];
 
       try {
         const dto = plainToInstance(CreatePropertyDto, rawPayload);
-        const validationErrors = await validate(dto);
+        const validationErrorsForRow = await validate(dto);
 
-        if (validationErrors.length > 0) {
+        if (validationErrorsForRow.length > 0) {
           const messages: string[] = [];
 
-          for (const err of validationErrors) {
+          for (const err of validationErrorsForRow) {
             if (err.constraints) {
               messages.push(...Object.values(err.constraints));
             }
           }
 
-          const message =
-            messages.join('; ') || 'Validation failed for this row';
-
-          results.failed += 1;
-          results.errors.push({
+          validationErrors.push({
             row: rowNumber,
-            error: message,
+            error: messages.join('; ') || 'Validation failed for this row',
           });
           continue;
         }
 
-        await this.propertyService.create(dto, userId);
-        results.successful += 1;
+        validatedPayloads.push(dto);
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Unknown error';
-
-        results.failed += 1;
-        results.errors.push({
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        validationErrors.push({
           row: rowNumber,
           error: `Row ${rowNumber}: ${message}`,
         });
       }
     }
 
-    return results;
+    if (validatedPayloads.length === 0) {
+      return {
+        total: payloads.length,
+        successful: 0,
+        failed: payloads.length,
+        errors: validationErrors,
+        jobId: null,
+        message: 'No valid properties found. All rows failed validation.',
+      };
+    }
+
+    const jobId = await this.queueService.addFileProcessingJob({
+      type: 'excel-import',
+      userId,
+      propertyData: validatedPayloads,
+      metadata: {
+        fileName: file.originalname,
+        totalRows: payloads.length,
+        validatedRows: validatedPayloads.length,
+      },
+    });
+
+    return {
+      total: payloads.length,
+      successful: 0,
+      failed: validationErrors.length,
+      errors: validationErrors,
+      jobId,
+      message: `Excel import job queued successfully. ${validatedPayloads.length} properties will be processed in the background.`,
+    };
   }
 
   @Get()

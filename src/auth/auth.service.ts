@@ -10,6 +10,7 @@ import { EmailService } from '../email/email.service';
 import { JwtService } from './jwt.service';
 import { UserCacheService } from './services/user-cache.service';
 import { OtpService } from './services/otp.service';
+import { QueueService } from '../queue/queue.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -31,7 +32,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly userCache: UserCacheService,
     private readonly otpService: OtpService,
-  ) {}
+    private readonly queueService: QueueService,
+  ) { }
 
   /**
    * Generate a secure random OTP code using crypto.randomInt
@@ -166,7 +168,7 @@ export class AuthService {
       if (!device.deviceTokenHash) continue;
 
       const isValid = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
-      
+
       if (isValid) {
         // Token matches this device
         // Check if fingerprint is provided and matches
@@ -209,7 +211,7 @@ export class AuthService {
     if (existingDeviceToken) {
       // Reuse existing token from cookie - verify against stored hashes
       deviceToken = existingDeviceToken;
-      
+
       // Query all devices for this user to find a matching token hash
       const userDevices = await this.prisma.device.findMany({
         where: {
@@ -296,7 +298,7 @@ export class AuthService {
       if (!device.deviceTokenHash) continue;
 
       const isValid = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
-      
+
       if (isValid) {
         // Revoke this device's token
         await this.prisma.device.update({
@@ -367,11 +369,22 @@ export class AuthService {
       throw new Error('Failed to store OTP');
     }
 
-    // Send OTP via email
+    // Send OTP via email queue (non-blocking)
     if (type === OtpType.EMAIL_VERIFICATION) {
-      await this.emailService.sendOtpEmail(email, otpCode, fullName);
+      await this.queueService.addEmailJob({
+        type: 'otp',
+        to: email,
+        otpCode,
+        fullName,
+      }, { priority: 1 });
     } else if (type === OtpType.DEVICE_VERIFICATION && ipAddress) {
-      await this.emailService.sendDeviceVerificationEmail(email, otpCode, fullName, ipAddress);
+      await this.queueService.addEmailJob({
+        type: 'device-verification',
+        to: email,
+        otpCode,
+        fullName,
+        ipAddress,
+      }, { priority: 1 });
     }
 
     return otpCode;
@@ -409,7 +422,7 @@ export class AuthService {
     // You might check a pre-registration subscription table or require subscription first
     const role = UserRole.PROPERTY_MANAGER; // Default role
     const nodeEnv = process.env.NODE_ENV || 'development';
-    
+
     // Only check subscription in production, allow registration in development
     if (role === UserRole.PROPERTY_MANAGER && nodeEnv === 'production') {
       const hasSubscription = await this.checkPropertyManagerSubscription(email);
@@ -467,7 +480,12 @@ export class AuthService {
     try {
       const otpCode = this.generateOtp();
       await this.otpService.createOtp(user.newUser.id, otpCode, OtpType.EMAIL_VERIFICATION);
-      await this.emailService.sendOtpEmail(email, otpCode, fullName);
+      await this.queueService.addEmailJob({
+        type: 'otp',
+        to: email,
+        otpCode,
+        fullName,
+      }, { priority: 1 });
     } catch (error) {
       // Log error but don't fail registration
       console.error('Failed to send OTP email:', error);
@@ -667,11 +685,11 @@ export class AuthService {
     deviceFingerprint?: string,
     existingDeviceToken?: string,
   ) {
-    const authProvider = provider === 'GOOGLE' 
-      ? AuthProvider.GOOGLE 
-      : provider === 'FACEBOOK' 
-      ? AuthProvider.FACEBOOK 
-      : AuthProvider.APPLE;
+    const authProvider = provider === 'GOOGLE'
+      ? AuthProvider.GOOGLE
+      : provider === 'FACEBOOK'
+        ? AuthProvider.FACEBOOK
+        : AuthProvider.APPLE;
 
     // Find existing user by email or providerUserId
     let user = await this.prisma.user.findFirst({
@@ -704,7 +722,7 @@ export class AuthService {
       // Only check subscription in production for OAuth (similar to email registration)
       const role = UserRole.PROPERTY_MANAGER; // Default role
       const nodeEnv = process.env.NODE_ENV || 'development';
-      
+
       // Only check subscription in production, allow OAuth registration in development
       // OAuth users will select subscription after completing profile
       if (role === UserRole.PROPERTY_MANAGER && nodeEnv === 'production') {
@@ -889,7 +907,7 @@ export class AuthService {
     // Check device token if provided
     if (deviceToken) {
       const tokenValidation = await this.validateDeviceToken(user.id, deviceToken, deviceFingerprint);
-      
+
       if (tokenValidation.isValid && !tokenValidation.requiresFingerprintMatch) {
         // Valid token and fingerprint matches - skip OTP, allow login
         await this.prisma.userAuthIdentity.update({
@@ -971,10 +989,10 @@ export class AuthService {
 
     // Calculate subscription dates using date-fns for safe date arithmetic
     const startDate = new Date();
-    const endDate = isYearly 
+    const endDate = isYearly
       ? addYears(startDate, 1)
       : addMonths(startDate, 1);
-    
+
     // nextBillingDate is the same as endDate
     const nextBillingDate = endDate;
     // Create subscription and activate account in a transaction  

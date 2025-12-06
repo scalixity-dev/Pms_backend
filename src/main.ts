@@ -7,6 +7,9 @@ import compression from 'compression';
 import { ConfigService } from '@nestjs/config';
 import { getCorsConfig, getHelmetConfig, getRequestConfig, getCompressionConfig } from './config/security.config';
 import { CompressionLoggerMiddleware } from './middleware/compression-logger.middleware';
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { ExpressAdapter } from '@bull-board/express';
 
 /**
  * Validate critical environment variables before application startup
@@ -118,6 +121,31 @@ async function bootstrap() {
       },
     }),
   );
+
+  // Setup Bull Board for job monitoring
+  const bullBoardEnabled = configService.get<boolean>('BULL_BOARD_ENABLED', true);
+  if (bullBoardEnabled) {
+    try {
+      const { initializeQueues, getBullBoardQueues } = await import('./queue/queue-board.js');
+      initializeQueues(configService);
+      const queues = getBullBoardQueues();
+      
+      if (queues.length > 0) {
+        const serverAdapter = new ExpressAdapter();
+        serverAdapter.setBasePath('/admin/queues');
+        
+        createBullBoard({
+          queues: queues.map(queue => new BullMQAdapter(queue)),
+          serverAdapter,
+        });
+        
+        app.use('/admin/queues', serverAdapter.getRouter());
+        console.log('Bull Board enabled at http://localhost:3000/admin/queues');
+      }
+    } catch (error) {
+      console.warn('Bull Board setup failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
   
   // Set port based on environment: 5742 for production, 3000 for development
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
