@@ -187,9 +187,5 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return false;
     }
   }
-
-  getClient(): Redis | null {
-    return this.client;
-  }
 }
 

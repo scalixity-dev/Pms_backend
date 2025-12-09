@@ -5,8 +5,6 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CacheService } from '../redis/cache.service';
-import { CacheWarmingService } from '../redis/cache-warming.service';
 import { Prisma } from '@prisma/client';
 import { CreateAmenitiesDto, CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
@@ -122,20 +120,16 @@ const propertyRelationsInclude = {
 
 @Injectable()
 export class PropertyService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly cache: CacheService,
-    private readonly cacheWarming: CacheWarmingService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async create(createPropertyDto: CreatePropertyDto, userId: string) {
     // Use the authenticated user's ID as managerId
     // Ignore managerId from DTO if provided (security: users can only create properties for themselves)
     const managerId = userId;
 
+    // Verify that the manager exists
     const manager = await this.prisma.user.findUnique({
       where: { id: managerId },
-      select: { id: true },
     });
 
     if (!manager) {
@@ -243,10 +237,11 @@ export class PropertyService {
       });
     }
 
+    // Create units if provided (for MULTI properties)
     if (createPropertyDto.units?.length) {
-      const units = createPropertyDto.units;
-      await this.prisma.$transaction(async (tx) => {
-        const unitsData = units.map((unit) => ({
+      for (const unit of createPropertyDto.units) {
+        const createdUnit = await this.prisma.unit.create({
+          data: {
             propertyId: property.id,
             unitName: unit.unitName,
             apartmentType: unit.apartmentType,
@@ -254,131 +249,87 @@ export class PropertyService {
             beds: unit.beds,
             baths: unit.baths ? new Decimal(unit.baths) : null,
             rent: unit.rent ? new Decimal(unit.rent) : null,
-        }));
-
-        const createdUnits = await tx.unit.createManyAndReturn({
-          data: unitsData,
+          },
         });
 
-        const amenitiesData = createdUnits
-          .map((createdUnit, index) => {
-            const unitAmenitiesData = this.buildAmenitiesData(
-              units[index].amenities,
-              { unitId: createdUnit.id },
-            );
-            return unitAmenitiesData
-              ? ({ ...unitAmenitiesData, unitId: createdUnit.id } as Prisma.AmenitiesCreateInput)
-              : null;
-          })
-          .filter((data): data is Prisma.AmenitiesCreateInput => data !== null);
+        const unitAmenitiesData = this.buildAmenitiesData(unit.amenities, {
+          unitId: createdUnit.id,
+        });
 
-        if (amenitiesData.length > 0) {
-          await tx.amenities.createMany({
-            data: amenitiesData as Prisma.AmenitiesCreateManyInput[],
+        if (unitAmenitiesData) {
+          await this.prisma.amenities.create({
+            data: unitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
           });
         }
-      });
+      }
     }
 
+    // Create single unit details if provided (for SINGLE properties)
     if (createPropertyDto.singleUnitDetails) {
-      const singleUnitDetailsDto = createPropertyDto.singleUnitDetails;
-      await this.prisma.$transaction(async (tx) => {
-        const singleUnitDetails = await tx.singleUnitDetail.create({
+      const singleUnitDetails = await this.prisma.singleUnitDetail.create({
         data: {
           propertyId: property.id,
-            beds: singleUnitDetailsDto.beds,
-            baths: singleUnitDetailsDto.baths
-              ? new Decimal(singleUnitDetailsDto.baths)
+          beds: createPropertyDto.singleUnitDetails.beds,
+          baths: createPropertyDto.singleUnitDetails.baths
+            ? new Decimal(createPropertyDto.singleUnitDetails.baths)
             : null,
-            marketRent: singleUnitDetailsDto.marketRent
-              ? new Decimal(singleUnitDetailsDto.marketRent)
+          marketRent: createPropertyDto.singleUnitDetails.marketRent
+            ? new Decimal(createPropertyDto.singleUnitDetails.marketRent)
             : null,
-            deposit: singleUnitDetailsDto.deposit
-              ? new Decimal(singleUnitDetailsDto.deposit)
+          deposit: createPropertyDto.singleUnitDetails.deposit
+            ? new Decimal(createPropertyDto.singleUnitDetails.deposit)
             : null,
         },
       });
 
       const singleUnitAmenitiesData = this.buildAmenitiesData(
-          singleUnitDetailsDto.amenities,
-          { singleUnitDetailId: singleUnitDetails.id },
+        createPropertyDto.singleUnitDetails.amenities,
+        {
+          singleUnitDetailId: singleUnitDetails.id,
+        },
       );
 
       if (singleUnitAmenitiesData) {
-          await tx.amenities.create({
+        await this.prisma.amenities.create({
           data: singleUnitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
         });
       }
-      });
     }
 
-    await this.cache.invalidateProperty(managerId, property.id);
-    
-    const freshProperty = await this.prisma.property.findUnique({
-      where: { id: property.id },
-      include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
-    });
-
-    if (freshProperty) {
-      const cacheKey = this.cache.propertyDetailKey(property.id);
-      await this.cache.set(cacheKey, freshProperty, this.cache.getTTL('PROPERTY_DETAIL'));
-    }
-
-    setImmediate(() => {
-      this.cacheWarming.warmUserCache(managerId).catch(() => {});
-    });
-
-    return freshProperty!;
+    // Return property with all related data
+    return this.findOne(property.id, managerId);
   }
 
   async findAll(userId: string, includeListings: boolean = false) {
-    const cacheKey = this.cache.propertyListKey(userId, includeListings);
-    const ttl = this.cache.getTTL('PROPERTY_LIST');
+    // Use lightweight include by default, add listings only if requested
+    const include = includeListings
+      ? propertyRelationsInclude
+      : propertyListInclude;
 
-    return this.cache.getOrSet(
-      cacheKey,
-      async () => {
-        const include = includeListings
-          ? propertyRelationsInclude
-          : propertyListInclude;
-
-        const properties = await this.prisma.property.findMany({
-          where: {
-            managerId: userId,
-          },
-          include: include as unknown as Prisma.PropertyInclude,
-          orderBy: {
-            createdAt: 'desc',
-          },
-        });
-
-        return properties;
+    const properties = await this.prisma.property.findMany({
+      where: {
+        managerId: userId,
       },
-      ttl,
-    );
+      include: include as unknown as Prisma.PropertyInclude,
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return properties;
   }
 
   async findOne(id: string, userId: string) {
-    const cacheKey = this.cache.propertyDetailKey(id);
-    const ttl = this.cache.getTTL('PROPERTY_DETAIL');
+    const property = await this.prisma.property.findUnique({
+      where: { id },
+      include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
+    });
 
-    const property = await this.cache.getOrSet(
-      cacheKey,
-      async () => {
-        const property = await this.prisma.property.findUnique({
-          where: { id },
-          include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
-        });
+    if (!property) {
+      throw new NotFoundException(`Property with ID ${id} not found`);
+    }
 
-        if (!property) {
-          throw new NotFoundException(`Property with ID ${id} not found`);
-        }
-
-        return property;
-      },
-      ttl,
-    );
-
+    // Ensure the property belongs to the authenticated user
     if (property.managerId !== userId) {
       throw new ForbiddenException('You do not have permission to access this property');
     }
@@ -550,29 +501,8 @@ export class PropertyService {
       },
     });
 
-    await this.cache.invalidateProperty(userId, id);
-    
-    const freshProperty = await this.prisma.property.findUnique({
-      where: { id },
-      include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
-    });
-
-    if (!freshProperty) {
-      throw new NotFoundException(`Property with ID ${id} not found`);
-    }
-
-    if (freshProperty.managerId !== userId) {
-      throw new ForbiddenException('You do not have permission to access this property');
-    }
-
-    const cacheKey = this.cache.propertyDetailKey(id);
-    await this.cache.set(cacheKey, freshProperty, this.cache.getTTL('PROPERTY_DETAIL'));
-
-    setImmediate(() => {
-      this.cacheWarming.warmUserCache(userId).catch(() => {});
-    });
-
-    return freshProperty;
+    // Return property with all related data
+    return this.findOne(id, userId);
   }
 
   async remove(id: string, userId: string) {
