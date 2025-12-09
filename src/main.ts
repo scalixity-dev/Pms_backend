@@ -3,13 +3,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import compression from 'compression';
 import { ConfigService } from '@nestjs/config';
-import { getCorsConfig, getHelmetConfig, getRequestConfig, getCompressionConfig } from './config/security.config';
-import { CompressionLoggerMiddleware } from './middleware/compression-logger.middleware';
-import { createBullBoard } from '@bull-board/api';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
-import { ExpressAdapter } from '@bull-board/express';
+import { getCorsConfig, getHelmetConfig, getRequestConfig } from './config/security.config';
 
 /**
  * Validate critical environment variables before application startup
@@ -77,33 +72,6 @@ async function bootstrap() {
   const corsConfig = getCorsConfig(configService);
   app.enableCors(corsConfig);
   
-  const compressionConfig = getCompressionConfig(configService);
-  const compressionLoggingEnabled = configService.get<boolean>('COMPRESSION_LOGGING_ENABLED', true);
-  
-  if (compressionConfig.enabled) {
-    // To disable compression logging:
-    //   1. Set COMPRESSION_LOGGING_ENABLED=false in .env (recommended)
-    //   2. Or comment out the if block below
-    if (compressionLoggingEnabled) {
-      app.use((req: any, res: any, next: any) => {
-        const logger = new CompressionLoggerMiddleware();
-        logger.use(req, res, next);
-      });
-    }
-
-    app.use(compression({
-      level: compressionConfig.level,
-      threshold: compressionConfig.threshold,
-      filter: compressionConfig.filter,
-      chunkSize: compressionConfig.chunkSize,
-    }));
-    
-    console.log(`Response compression enabled (level: ${compressionConfig.level}, threshold: ${compressionConfig.threshold} bytes)`);
-    if (compressionLoggingEnabled) {
-      console.log(`Compression logging enabled - will log compression stats for each request`);
-    }
-  }
-  
   // Configure request size limits and timeouts
   const requestConfig = getRequestConfig(configService);
   // Note: Request size limits are typically handled by the reverse proxy (nginx, etc.)
@@ -121,31 +89,6 @@ async function bootstrap() {
       },
     }),
   );
-
-  // Setup Bull Board for job monitoring
-  const bullBoardEnabled = configService.get<boolean>('BULL_BOARD_ENABLED', true);
-  if (bullBoardEnabled) {
-    try {
-      const { initializeQueues, getBullBoardQueues } = await import('./queue/queue-board.js');
-      initializeQueues(configService);
-      const queues = getBullBoardQueues();
-      
-      if (queues.length > 0) {
-        const serverAdapter = new ExpressAdapter();
-        serverAdapter.setBasePath('/admin/queues');
-        
-        createBullBoard({
-          queues: queues.map(queue => new BullMQAdapter(queue)),
-          serverAdapter,
-        });
-        
-        app.use('/admin/queues', serverAdapter.getRouter());
-        console.log('Bull Board enabled at http://localhost:3000/admin/queues');
-      }
-    } catch (error) {
-      console.warn('Bull Board setup failed:', error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
   
   // Set port based on environment: 5742 for production, 3000 for development
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
@@ -157,7 +100,6 @@ async function bootstrap() {
   console.log(`🚀 Application is running on: http://localhost:${port}`);
   console.log(`📦 Environment: ${nodeEnv}`);
   console.log(`🔒 Security features enabled: Rate Limiting, Helmet, CORS`);
-  console.log(`Performance features enabled: Response Compression`);
   if (isProduction) {
     console.log(`🌐 Frontend URL: https://pms.scalixity.com`);
   }

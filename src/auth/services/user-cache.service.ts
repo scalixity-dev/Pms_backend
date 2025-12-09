@@ -12,22 +12,11 @@ interface CachedUserData {
 @Injectable()
 export class UserCacheService {
   private readonly logger = new Logger(UserCacheService.name);
-  private cache: LRUCache<string, CachedUserData>;
-  private currentMaxSize: number;
-  private readonly INITIAL_MAX_SIZE = 15 * 1024 * 1024;
-  private readonly MAX_LIMIT_SIZE = 100 * 1024 * 1024;
-  private readonly EXPANSION_SIZE = 10 * 1024 * 1024;
-  private readonly EXPANSION_THRESHOLD = 0.9;
+  private readonly cache: LRUCache<string, CachedUserData>;
 
   constructor() {
-    this.currentMaxSize = this.INITIAL_MAX_SIZE;
-    this.cache = this.createCache(this.currentMaxSize);
-    this.logger.log(`UserCache initialized with maxSize: ${this.formatBytes(this.currentMaxSize)}`);
-  }
-
-  private createCache(maxSize: number): LRUCache<string, CachedUserData> {
-    return new LRUCache<string, CachedUserData>({
-      maxSize,
+    this.cache = new LRUCache<string, CachedUserData>({
+      maxSize: 15 * 1024 * 1024,
       ttl: 5 * 60 * 1000,
       updateAgeOnGet: true,
       allowStale: false,
@@ -36,38 +25,6 @@ export class UserCacheService {
         return userSize;
       },
     });
-  }
-
-  private expandCacheIfNeeded(): void {
-    const currentSize = this.cache.calculatedSize || 0;
-    const usageRatio = currentSize / this.currentMaxSize;
-
-    if (usageRatio >= this.EXPANSION_THRESHOLD && this.currentMaxSize < this.MAX_LIMIT_SIZE) {
-      const newMaxSize = Math.min(
-        this.currentMaxSize + this.EXPANSION_SIZE,
-        this.MAX_LIMIT_SIZE,
-      );
-
-      if (newMaxSize > this.currentMaxSize) {
-        this.logger.log(
-          `Cache expansion triggered: currentSize=${this.formatBytes(currentSize)}, usageRatio=${(usageRatio * 100).toFixed(1)}%, expanding from ${this.formatBytes(this.currentMaxSize)} to ${this.formatBytes(newMaxSize)}`,
-        );
-
-        const oldCache = this.cache;
-        const newCache = this.createCache(newMaxSize);
-
-        for (const [key, value] of oldCache.entries()) {
-          newCache.set(key, value);
-        }
-
-        this.cache = newCache;
-        this.currentMaxSize = newMaxSize;
-
-        this.logger.log(
-          `Cache expanded successfully: migrated ${oldCache.size} entries, new maxSize=${this.formatBytes(this.currentMaxSize)}`,
-        );
-      }
-    }
   }
 
   get(userId: string): CachedUserData | undefined {
@@ -84,18 +41,14 @@ export class UserCacheService {
   }
 
   set(userId: string, userData: User & { subscriptions: Subscription[] }): void {
-    this.expandCacheIfNeeded();
-
     const size = this.getSizeInBytes({ user: userData, cachedAt: Date.now() });
     this.cache.set(userId, {
       user: userData,
       cachedAt: Date.now(),
     });
-
     const stats = this.getStats();
-    const usagePercent = ((stats.calculatedSize || 0) / this.currentMaxSize) * 100;
     this.logger.log(
-      `[CACHE SET] userId: ${userId}, email: ${userData.email}, size: ${this.formatBytes(size)}, totalEntries: ${stats.size}, totalSize: ${this.formatBytes(stats.calculatedSize || 0)}/${this.formatBytes(this.currentMaxSize)} (${usagePercent.toFixed(1)}%)`,
+      `[CACHE SET] userId: ${userId}, email: ${userData.email}, size: ${size} bytes, totalEntries: ${stats.size}, totalSize: ${this.formatBytes(stats.calculatedSize || 0)}`,
     );
   }
 
@@ -117,8 +70,6 @@ export class UserCacheService {
     return {
       size: this.cache.size,
       calculatedSize: this.cache.calculatedSize,
-      maxSize: this.currentMaxSize,
-      usagePercent: ((this.cache.calculatedSize || 0) / this.currentMaxSize) * 100,
     };
   }
 

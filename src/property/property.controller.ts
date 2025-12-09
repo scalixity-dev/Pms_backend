@@ -25,7 +25,6 @@ import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { parsePropertyExcelBuffer } from './utils/propertyExcelImporter';
-import { QueueService } from '../queue/queue.service';
 
 // Extend Express Request to include user property from JwtAuthGuard
 interface AuthenticatedRequest extends Request {
@@ -42,10 +41,7 @@ interface AuthenticatedRequest extends Request {
 @Controller('property')
 @UseGuards(JwtAuthGuard)
 export class PropertyController {
-  constructor(
-    private readonly propertyService: PropertyService,
-    private readonly queueService: QueueService,
-  ) {}
+  constructor(private readonly propertyService: PropertyService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -91,73 +87,56 @@ export class PropertyController {
 
     const payloads = parsePropertyExcelBuffer(file.buffer);
 
-    const validatedPayloads: CreatePropertyDto[] = [];
-    const validationErrors: Array<{ row: number; error: string }> = [];
+    const results = {
+      total: payloads.length,
+      successful: 0,
+      failed: 0,
+      errors: [] as Array<{ row: number; error: string }>,
+    };
 
     for (let i = 0; i < payloads.length; i += 1) {
-      const rowNumber = i + 2;
+      const rowNumber = i + 2; // +1 for header row, +1 for 1-based index
       const rawPayload = payloads[i];
 
       try {
         const dto = plainToInstance(CreatePropertyDto, rawPayload);
-        const validationErrorsForRow = await validate(dto);
+        const validationErrors = await validate(dto);
 
-        if (validationErrorsForRow.length > 0) {
+        if (validationErrors.length > 0) {
           const messages: string[] = [];
 
-          for (const err of validationErrorsForRow) {
+          for (const err of validationErrors) {
             if (err.constraints) {
               messages.push(...Object.values(err.constraints));
             }
           }
 
-          validationErrors.push({
+          const message =
+            messages.join('; ') || 'Validation failed for this row';
+
+          results.failed += 1;
+          results.errors.push({
             row: rowNumber,
-            error: messages.join('; ') || 'Validation failed for this row',
+            error: message,
           });
           continue;
         }
 
-        validatedPayloads.push(dto);
+        await this.propertyService.create(dto, userId);
+        results.successful += 1;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        validationErrors.push({
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+
+        results.failed += 1;
+        results.errors.push({
           row: rowNumber,
           error: `Row ${rowNumber}: ${message}`,
         });
       }
     }
 
-    if (validatedPayloads.length === 0) {
-      return {
-        total: payloads.length,
-        successful: 0,
-        failed: payloads.length,
-        errors: validationErrors,
-        jobId: null,
-        message: 'No valid properties found. All rows failed validation.',
-      };
-    }
-
-    const jobId = await this.queueService.addFileProcessingJob({
-      type: 'excel-import',
-      userId,
-      propertyData: validatedPayloads,
-      metadata: {
-        fileName: file.originalname,
-        totalRows: payloads.length,
-        validatedRows: validatedPayloads.length,
-      },
-    });
-
-    return {
-      total: payloads.length,
-      successful: 0,
-      failed: validationErrors.length,
-      errors: validationErrors,
-      jobId,
-      message: `Excel import job queued successfully. ${validatedPayloads.length} properties will be processed in the background.`,
-    };
+    return results;
   }
 
   @Get()
@@ -176,29 +155,14 @@ export class PropertyController {
     return this.propertyService.findAll(userId, shouldIncludeListings);
   }
 
-  @Get('units/all')
-  @HttpCode(HttpStatus.OK)
-  async findAllUnits(@Req() req: AuthenticatedRequest) {
-    const userId = req.user?.userId;
-    if (!userId) {
-      throw new UnauthorizedException('User not authenticated');
-    }
-    return this.propertyService.findAllUnits(userId);
-  }
-
   @Get(':id')
   @HttpCode(HttpStatus.OK)
-  async findOne(
-    @Param('id') id: string,
-    @Req() req: AuthenticatedRequest,
-    @Query('includeFullUnitDetails') includeFullUnitDetails?: string,
-  ) {
+  async findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    const includeFull = includeFullUnitDetails === 'true';
-    return this.propertyService.findOne(id, userId, includeFull);
+    return this.propertyService.findOne(id, userId);
   }
 
   @Patch(':id')
