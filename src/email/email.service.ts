@@ -271,5 +271,44 @@ export class EmailService {
       throw lastError;
     }
   }
+
+  async sendCustomEmail(to: string, subject: string, html: string): Promise<void> {
+    const mailOptions = {
+      from: this.configService.get<string>('SMTP_FROM', 'noreply@pms.com'),
+      to,
+      subject,
+      html,
+    };
+
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.transporter.sendMail(mailOptions);
+        this.logger.log(`Custom email sent successfully to ${to}`);
+        return;
+      } catch (error) {
+        lastError = error as Error;
+        this.logger.warn(
+          `Failed to send custom email to ${to} (attempt ${attempt}/${maxRetries}):`,
+          error instanceof Error ? error.message : error,
+        );
+
+        if (attempt === maxRetries) {
+          this.logger.error(`Failed to send custom email to ${to} after ${maxRetries} attempts`);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          throw new Error(`Failed to send email: ${errorMessage}`);
+        }
+
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+  }
 }
 

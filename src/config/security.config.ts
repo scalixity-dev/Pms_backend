@@ -183,6 +183,47 @@ export function getRequestConfig(configService: ConfigService) {
 }
 
 /**
+ * Get compression configuration
+ * Optimized for production with Brotli support and smart filtering
+ */
+export function getCompressionConfig(configService: ConfigService) {
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const isProduction = nodeEnv === 'production';
+
+  return {
+    enabled: configService.get<boolean>('COMPRESSION_ENABLED', true),
+    level: configService.get<number>('COMPRESSION_LEVEL', isProduction ? 6 : 1),
+    threshold: configService.get<number>('COMPRESSION_THRESHOLD', 1024),
+    filter: (req: any, res: any) => {
+      if (req.headers['x-no-compression']) {
+        return false;
+      }
+
+      const contentType = res.getHeader('content-type') || '';
+      const path = req.path || '';
+      
+      const compressibleTypes = [
+        'application/json',
+        'application/javascript',
+        'application/xml',
+        'text/html',
+        'text/css',
+        'text/javascript',
+        'text/plain',
+        'text/xml',
+        'application/vnd.api+json',
+      ];
+
+      const contentTypeMatches = compressibleTypes.some(type => contentType.includes(type));
+      const isApiRoute = path.startsWith('/api') || path.startsWith('/property') || path.startsWith('/auth') || path.startsWith('/listing');
+      
+      return contentTypeMatches || isApiRoute;
+    },
+    chunkSize: configService.get<number>('COMPRESSION_CHUNK_SIZE', 16 * 1024),
+  };
+}
+
+/**
  * Get API configuration
  */
 export function getApiConfig(configService: ConfigService) {
