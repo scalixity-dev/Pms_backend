@@ -15,6 +15,9 @@ import { MaintenanceRequestModule } from './maintenance-request/maintenance-requ
 import { ServiceProviderModule } from './service-provider/service-provider.module';
 import { KeysAndLocksModule } from './keys-and-locks/keys-and-locks.module';
 import { ListingModule } from './listing/listing.module';
+import { RedisModule } from './redis/redis.module';
+import { QueueModule } from './queue/queue.module';
+import { UnitModule } from './unit/unit.module';
 
 @Module({
   imports: [
@@ -23,9 +26,12 @@ import { ListingModule } from './listing/listing.module';
     }),
     SecurityModule,
     PrismaModule,
+    RedisModule,
+    QueueModule,
     AuthModule,
     UsersModule,
     PropertyModule,
+    UnitModule,
     LeasingModule,
     ListingModule,
     UploadModule,
