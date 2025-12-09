@@ -4,6 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../redis/cache.service';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { UpdateApplicationDto } from './dto/update-application.dto';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -56,7 +57,10 @@ const applicationInclude = {
 
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   async create(createApplicationDto: CreateApplicationDto, userId?: string) {
     // Verify that the leasing exists
@@ -244,34 +248,53 @@ export class ApplicationService {
       include: applicationInclude as Prisma.ApplicationInclude,
     });
 
+    const leasingForCache = await this.prisma.propertyLeasing.findUnique({
+      where: { id: application.leasingId },
+      select: { property: { select: { managerId: true } } },
+    });
+
+    if (leasingForCache?.property.managerId) {
+      await this.cache.invalidateApplication(leasingForCache.property.managerId, application.id, application.leasingId);
+    }
+
+    const cacheKey = this.cache.applicationDetailKey(application.id);
+    await this.cache.set(cacheKey, application, this.cache.getTTL('APPLICATION_DETAIL'));
+
     return application;
   }
 
   async findAll(userId?: string) {
-    const where: Prisma.ApplicationWhereInput = {};
+    const cacheKey = this.cache.applicationListKey(userId);
+    const ttl = this.cache.getTTL('APPLICATION_LIST');
 
-    // If userId is provided, filter by property manager
-    if (userId) {
-      where.leasing = {
-        property: {
-          managerId: userId,
-        },
-      };
-    }
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const where: Prisma.ApplicationWhereInput = {};
 
-    const applications = await this.prisma.application.findMany({
-      where,
-      include: applicationInclude as Prisma.ApplicationInclude,
-      orderBy: {
-        createdAt: 'desc',
+        if (userId) {
+          where.leasing = {
+            property: {
+              managerId: userId,
+            },
+          };
+        }
+
+        const applications = await this.prisma.application.findMany({
+          where,
+          include: applicationInclude as Prisma.ApplicationInclude,
+          orderBy: {
+            createdAt: 'desc',
+          },
+        });
+
+        return applications;
       },
-    });
-
-    return applications;
+      ttl,
+    );
   }
 
   async findByLeasingId(leasingId: string, userId?: string) {
-    // Verify that the leasing exists
     const leasing = await this.prisma.propertyLeasing.findUnique({
       where: { id: leasingId },
       include: {
@@ -287,35 +310,53 @@ export class ApplicationService {
       throw new NotFoundException(`Leasing with ID ${leasingId} not found`);
     }
 
-    // If userId is provided, verify permission
     if (userId && leasing.property.managerId !== userId) {
       throw new ForbiddenException(
         'You do not have permission to access applications for this property',
       );
     }
 
-    const applications = await this.prisma.application.findMany({
-      where: { leasingId },
-      include: applicationInclude as Prisma.ApplicationInclude,
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    const cacheKey = this.cache.applicationListKey(userId, leasingId);
+    const ttl = this.cache.getTTL('APPLICATION_LIST');
 
-    return applications;
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const applications = await this.prisma.application.findMany({
+          where: { leasingId },
+          include: applicationInclude as Prisma.ApplicationInclude,
+          orderBy: {
+            createdAt: 'desc',
+          },
+        });
+
+        return applications;
+      },
+      ttl,
+    );
   }
 
   async findOne(id: string, userId?: string) {
-    const application = await this.prisma.application.findUnique({
-      where: { id },
-      include: applicationInclude as Prisma.ApplicationInclude,
-    });
+    const cacheKey = this.cache.applicationDetailKey(id);
+    const ttl = this.cache.getTTL('APPLICATION_DETAIL');
 
-    if (!application) {
-      throw new NotFoundException(`Application with ID ${id} not found`);
-    }
+    const application = await this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const application = await this.prisma.application.findUnique({
+          where: { id },
+          include: applicationInclude as Prisma.ApplicationInclude,
+        });
 
-    // If userId is provided, verify permission
+        if (!application) {
+          throw new NotFoundException(`Application with ID ${id} not found`);
+        }
+
+        return application;
+      },
+      ttl,
+    );
+
     if (userId) {
       const leasing = await this.prisma.propertyLeasing.findUnique({
         where: { id: application.leasingId },
@@ -600,12 +641,18 @@ export class ApplicationService {
       };
     }
 
-    // Update the application
     const updatedApplication = await this.prisma.application.update({
       where: { id },
       data: updateData,
       include: applicationInclude as Prisma.ApplicationInclude,
     });
+
+    if (userId) {
+      await this.cache.invalidateApplication(userId, id, updatedApplication.leasingId);
+    }
+
+    const cacheKey = this.cache.applicationDetailKey(id);
+    await this.cache.set(cacheKey, updatedApplication, this.cache.getTTL('APPLICATION_DETAIL'));
 
     return updatedApplication;
   }
@@ -638,10 +685,13 @@ export class ApplicationService {
       );
     }
 
-    // Delete the application (cascade will handle related records)
     await this.prisma.application.delete({
       where: { id },
     });
+
+    if (userId) {
+      await this.cache.invalidateApplication(userId, id, existingApplication.leasingId);
+    }
 
     return {
       message: 'Application deleted successfully',

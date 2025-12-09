@@ -141,6 +141,13 @@ model Property {
   photos                  PropertyPhoto[]
   singleUnitDetails       SingleUnitDetail?
   units                   Unit[]
+
+  @@index([managerId])
+  @@index([managerId, status])
+  @@index([managerId, createdAt(sort: Desc)])
+  @@index([managerId, status, createdAt(sort: Desc)])
+  @@index([status])
+  @@index([propertyType])
 }
 
 model PropertyPhoto {
@@ -320,13 +327,18 @@ model MaintenanceRequest {
   unit               Unit?                   @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@index([managerId])
+  @@index([managerId, status])
+  @@index([managerId, status, priority])
+  @@index([managerId, requestedAt(sort: Desc)])
   @@index([propertyId])
+  @@index([propertyId, status])
   @@index([unitId])
   @@index([singleUnitDetailId])
   @@index([equipmentId])
   @@index([status])
   @@index([priority])
   @@index([requestedAt])
+  @@index([status, priority, requestedAt(sort: Desc)])
   @@map("maintenance_requests")
 }
 
@@ -466,9 +478,14 @@ model Listing {
   unit                       Unit?             @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
+  @@index([propertyId, listingStatus])
+  @@index([propertyId, listingStatus, isActive])
+  @@index([propertyId, createdAt(sort: Desc)])
   @@index([unitId])
   @@index([listingStatus])
   @@index([occupancyStatus])
+  @@index([isActive, listingStatus])
+  @@index([createdAt(sort: Desc)])
   @@map("listings")
 }
 

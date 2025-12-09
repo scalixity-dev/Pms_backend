@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../redis/cache.service';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -52,7 +53,10 @@ const listingInclude = {
 
 @Injectable()
 export class ListingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   /**
    * Create a listing from a property
@@ -192,15 +196,12 @@ export class ListingService {
       source: createListingDto.source || null,
     };
 
-    // Create listing and update property status in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
-      // Create the listing
       const listing = await tx.listing.create({
         data: listingData,
         include: listingInclude as Prisma.ListingInclude,
       });
 
-      // Update property status to ACTIVE
       await tx.property.update({
         where: { id: property.id },
         data: { status: 'ACTIVE' },
@@ -209,36 +210,64 @@ export class ListingService {
       return listing;
     });
 
+    if (userId) {
+      await this.cache.invalidateListing(userId, result.id);
+      await this.cache.invalidateProperty(userId, property.id);
+    }
+
+    const cacheKey = this.cache.listingDetailKey(result.id);
+    await this.cache.set(cacheKey, result, this.cache.getTTL('LISTING_DETAIL'));
+
     return result;
   }
 
   async findAll(userId?: string) {
-    const listings = await this.prisma.listing.findMany({
-      where: userId
-        ? {
-            property: {
-              managerId: userId,
-            },
-          }
-        : undefined,
-      include: listingInclude as Prisma.ListingInclude,
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    const cacheKey = this.cache.listingListKey(userId);
+    const ttl = this.cache.getTTL('LISTING_LIST');
 
-    return listings;
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const listings = await this.prisma.listing.findMany({
+          where: userId
+            ? {
+                property: {
+                  managerId: userId,
+                },
+              }
+            : undefined,
+          include: listingInclude as Prisma.ListingInclude,
+          orderBy: {
+            createdAt: 'desc',
+          },
+        });
+
+        return listings;
+      },
+      ttl,
+    );
   }
 
   async findOne(id: string, userId?: string) {
-    const listing = await this.prisma.listing.findUnique({
-      where: { id },
-      include: listingInclude as Prisma.ListingInclude,
-    });
+    const cacheKey = this.cache.listingDetailKey(id);
+    const ttl = this.cache.getTTL('LISTING_DETAIL');
 
-    if (!listing) {
-      throw new NotFoundException(`Listing with ID ${id} not found`);
-    }
+    const listing = await this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const listing = await this.prisma.listing.findUnique({
+          where: { id },
+          include: listingInclude as Prisma.ListingInclude,
+        });
+
+        if (!listing) {
+          throw new NotFoundException(`Listing with ID ${id} not found`);
+        }
+
+        return listing;
+      },
+      ttl,
+    );
 
     if (userId && listing.property.managerId !== userId) {
       throw new BadRequestException(
@@ -395,12 +424,19 @@ export class ListingService {
       updateData.source = updateListingDto.source;
     }
 
-    // Update the listing
     const updatedListing = await this.prisma.listing.update({
       where: { id },
       data: updateData,
       include: listingInclude as Prisma.ListingInclude,
     });
+
+    if (userId) {
+      await this.cache.invalidateListing(userId, id);
+      await this.cache.invalidateProperty(userId, updatedListing.propertyId);
+    }
+
+    const cacheKey = this.cache.listingDetailKey(id);
+    await this.cache.set(cacheKey, updatedListing, this.cache.getTTL('LISTING_DETAIL'));
 
     return updatedListing;
   }
@@ -425,10 +461,14 @@ export class ListingService {
       );
     }
 
-    // Delete the listing
     await this.prisma.listing.delete({
       where: { id },
     });
+
+    if (userId) {
+      await this.cache.invalidateListing(userId, id);
+      await this.cache.invalidateProperty(userId, existingListing.propertyId);
+    }
 
     return {
       message: 'Listing deleted successfully',

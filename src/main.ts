@@ -60,8 +60,11 @@ async function bootstrap() {
   // This ensures we fail fast with clear error messages
   validateEnvironmentVariables();
 
-  // Now create the actual application
-  const app = await NestFactory.create(AppModule);
+  const logRoutes = process.env.LOG_ROUTES === 'true';
+  
+  const app = await NestFactory.create(AppModule, {
+    logger: logRoutes ? ['log', 'error', 'warn', 'debug', 'verbose'] : ['log', 'error', 'warn'],
+  });
   
   // Get ConfigService for security configuration
   const configService = app.get(ConfigService);

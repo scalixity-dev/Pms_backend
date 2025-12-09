@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../redis/cache.service';
 import { CreateMaintenanceRequestDto } from './dto/create-maintenance-request.dto';
 import { UpdateMaintenanceRequestDto } from './dto/update-maintenance-request.dto';
 import {
@@ -82,7 +83,10 @@ const maintenanceRequestInclude = {
 
 @Injectable()
 export class MaintenanceRequestService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   async create(
     createMaintenanceRequestDto: CreateMaintenanceRequestDto,
@@ -274,23 +278,40 @@ export class MaintenanceRequestService {
       include: maintenanceRequestInclude,
     });
 
+    if (managerId) {
+      await this.cache.invalidateMaintenance(managerId, maintenanceRequest.id, createMaintenanceRequestDto.propertyId);
+      await this.cache.invalidateProperty(managerId, createMaintenanceRequestDto.propertyId);
+    }
+
+    const cacheKey = this.cache.maintenanceDetailKey(maintenanceRequest.id);
+    await this.cache.set(cacheKey, maintenanceRequest, this.cache.getTTL('MAINTENANCE_DETAIL'));
+
     return maintenanceRequest;
   }
 
   async findAll(userId?: string) {
-    const where: Prisma.MaintenanceRequestWhereInput = userId
-      ? { managerId: userId }
-      : {};
+    const cacheKey = this.cache.maintenanceListKey(userId);
+    const ttl = this.cache.getTTL('MAINTENANCE_LIST');
 
-    const maintenanceRequests = await this.prisma.maintenanceRequest.findMany({
-      where,
-      include: maintenanceRequestInclude,
-      orderBy: {
-        requestedAt: 'desc',
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const where: Prisma.MaintenanceRequestWhereInput = userId
+          ? { managerId: userId }
+          : {};
+
+        const maintenanceRequests = await this.prisma.maintenanceRequest.findMany({
+          where,
+          include: maintenanceRequestInclude,
+          orderBy: {
+            requestedAt: 'desc',
+          },
+        });
+
+        return maintenanceRequests;
       },
-    });
-
-    return maintenanceRequests;
+      ttl,
+    );
   }
 
   async findByPropertyId(propertyId: string, userId?: string) {
@@ -452,19 +473,28 @@ export class MaintenanceRequestService {
   }
 
   async findOne(id: string, userId?: string) {
-    const maintenanceRequest =
-      await this.prisma.maintenanceRequest.findUnique({
-        where: { id },
-        include: maintenanceRequestInclude,
-      });
+    const cacheKey = this.cache.maintenanceDetailKey(id);
+    const ttl = this.cache.getTTL('MAINTENANCE_DETAIL');
 
-    if (!maintenanceRequest) {
-      throw new NotFoundException(
-        `Maintenance request with ID ${id} not found`,
-      );
-    }
+    const maintenanceRequest = await this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const maintenanceRequest = await this.prisma.maintenanceRequest.findUnique({
+          where: { id },
+          include: maintenanceRequestInclude,
+        });
 
-    // Verify user has permission to view this maintenance request
+        if (!maintenanceRequest) {
+          throw new NotFoundException(
+            `Maintenance request with ID ${id} not found`,
+          );
+        }
+
+        return maintenanceRequest;
+      },
+      ttl,
+    );
+
     if (userId && maintenanceRequest.managerId !== userId) {
       throw new ForbiddenException(
         'You do not have permission to view this maintenance request',
@@ -714,6 +744,14 @@ export class MaintenanceRequestService {
       include: maintenanceRequestInclude,
     });
 
+    if (userId) {
+      await this.cache.invalidateMaintenance(userId, id, updatedRequest.propertyId);
+      await this.cache.invalidateProperty(userId, updatedRequest.propertyId);
+    }
+
+    const cacheKey = this.cache.maintenanceDetailKey(id);
+    await this.cache.set(cacheKey, updatedRequest, this.cache.getTTL('MAINTENANCE_DETAIL'));
+
     return updatedRequest;
   }
 
@@ -750,6 +788,11 @@ export class MaintenanceRequestService {
     await this.prisma.maintenanceRequest.delete({
       where: { id },
     });
+
+    if (userId) {
+      await this.cache.invalidateMaintenance(userId, id, existingRequest.propertyId);
+      await this.cache.invalidateProperty(userId, existingRequest.propertyId);
+    }
 
     return { message: 'Maintenance request deleted successfully' };
   }

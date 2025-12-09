@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LRUCache } from 'lru-cache';
 import { User, Subscription } from '@prisma/client';
 
@@ -12,6 +13,7 @@ interface CachedUserData {
 @Injectable()
 export class UserCacheService {
   private readonly logger = new Logger(UserCacheService.name);
+  private readonly loggingEnabled: boolean;
   private cache: LRUCache<string, CachedUserData>;
   private currentMaxSize: number;
   private readonly INITIAL_MAX_SIZE = 15 * 1024 * 1024;
@@ -19,10 +21,16 @@ export class UserCacheService {
   private readonly EXPANSION_SIZE = 10 * 1024 * 1024;
   private readonly EXPANSION_THRESHOLD = 0.9;
 
-  constructor() {
+  constructor(private readonly configService: ConfigService) {
+    const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+    this.loggingEnabled = configService.get<boolean>('LOG_USER_CACHE', nodeEnv === 'development');
+
     this.currentMaxSize = this.INITIAL_MAX_SIZE;
     this.cache = this.createCache(this.currentMaxSize);
+    
+    if (this.loggingEnabled) {
     this.logger.log(`UserCache initialized with maxSize: ${this.formatBytes(this.currentMaxSize)}`);
+    }
   }
 
   private createCache(maxSize: number): LRUCache<string, CachedUserData> {
@@ -49,9 +57,11 @@ export class UserCacheService {
       );
 
       if (newMaxSize > this.currentMaxSize) {
+        if (this.loggingEnabled) {
         this.logger.log(
           `Cache expansion triggered: currentSize=${this.formatBytes(currentSize)}, usageRatio=${(usageRatio * 100).toFixed(1)}%, expanding from ${this.formatBytes(this.currentMaxSize)} to ${this.formatBytes(newMaxSize)}`,
         );
+        }
 
         const oldCache = this.cache;
         const newCache = this.createCache(newMaxSize);
@@ -63,15 +73,18 @@ export class UserCacheService {
         this.cache = newCache;
         this.currentMaxSize = newMaxSize;
 
+        if (this.loggingEnabled) {
         this.logger.log(
           `Cache expanded successfully: migrated ${oldCache.size} entries, new maxSize=${this.formatBytes(this.currentMaxSize)}`,
         );
+        }
       }
     }
   }
 
   get(userId: string): CachedUserData | undefined {
     const cached = this.cache.get(userId);
+    if (this.loggingEnabled) {
     if (cached) {
       const age = Date.now() - cached.cachedAt;
       this.logger.log(
@@ -79,6 +92,7 @@ export class UserCacheService {
       );
     } else {
       this.logger.debug(`[CACHE MISS] userId: ${userId}`);
+      }
     }
     return cached;
   }
@@ -92,16 +106,18 @@ export class UserCacheService {
       cachedAt: Date.now(),
     });
 
+    if (this.loggingEnabled) {
     const stats = this.getStats();
     const usagePercent = ((stats.calculatedSize || 0) / this.currentMaxSize) * 100;
     this.logger.log(
       `[CACHE SET] userId: ${userId}, email: ${userData.email}, size: ${this.formatBytes(size)}, totalEntries: ${stats.size}, totalSize: ${this.formatBytes(stats.calculatedSize || 0)}/${this.formatBytes(this.currentMaxSize)} (${usagePercent.toFixed(1)}%)`,
     );
+    }
   }
 
   delete(userId: string): void {
     const cached = this.cache.get(userId);
-    if (cached) {
+    if (this.loggingEnabled && cached) {
       this.logger.log(`[CACHE DELETE] userId: ${userId}, email: ${cached.user.email}`);
     }
     this.cache.delete(userId);
@@ -110,7 +126,9 @@ export class UserCacheService {
   clear(): void {
     const sizeBefore = this.cache.size;
     this.cache.clear();
+    if (this.loggingEnabled) {
     this.logger.warn(`[CACHE CLEAR] Cleared ${sizeBefore} entries`);
+    }
   }
 
   getStats() {
