@@ -31,6 +31,7 @@ model User {
   currentListings             Listing[]               @relation("CurrentTenantListings")
   assignedMaintenanceRequests MaintenanceAssignment[] @relation("AssignedMaintenanceRequests")
   maintenanceRequests         MaintenanceRequest[]    @relation("ManagerMaintenanceRequests")
+  tasks                       tasks[]
 }
 
 model UserAuthIdentity {
@@ -177,16 +178,32 @@ model Unit {
   beds                Int?
   baths               Decimal?
   rent                Decimal?
+  deposit             Decimal?
+  coverPhotoUrl       String?
+  description         String?
   amenities           Amenities?           @relation("UnitAmenities")
   equipment           Equipment[]
   keys                Key[]
   listings            Listing[]
   maintenanceRequests MaintenanceRequest[]
   leasing             PropertyLeasing?     @relation("UnitLeasing")
+  photos              UnitPhoto[]
   property            Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
   @@map("units")
+}
+
+model UnitPhoto {
+  id         String   @id @default(uuid())
+  unitId     String
+  photoUrl   String
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  unit       Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@index([unitId])
+  @@map("unit_photos")
 }
 
 model SingleUnitDetail {
@@ -642,6 +659,29 @@ model BackgroundQuestion {
   @@map("background_questions")
 }
 
+model tasks {
+  id          String         @id
+  userId      String
+  title       String
+  status      TaskStatus     @default(OPEN)
+  description String?
+  date        DateTime?
+  time        String?
+  assignee    String?
+  propertyId  String?
+  recurring   Boolean        @default(false)
+  frequency   TaskFrequency?
+  endDate     DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime
+  User        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([propertyId])
+  @@index([status])
+  @@index([userId])
+}
+
 enum UserRole {
   PROPERTY_MANAGER
   TENANT
@@ -852,4 +892,19 @@ enum KeyStatus {
   LOST
   DAMAGED
   INACTIVE
+}
+
+enum TaskFrequency {
+  DAILY
+  WEEKLY
+  EVERY_TWO_WEEKS
+  MONTHLY
+  QUARTERLY
+  EVERY_SIX_MONTHS
+  YEARLY
+}
+
+enum TaskStatus {
+  OPEN
+  RESOLVED
 }

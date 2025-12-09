@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER } from '@nestjs/core';
+import { SentryModule } from '@sentry/nestjs/setup';
+import { SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -17,12 +20,14 @@ import { KeysAndLocksModule } from './keys-and-locks/keys-and-locks.module';
 import { ListingModule } from './listing/listing.module';
 import { RedisModule } from './redis/redis.module';
 import { QueueModule } from './queue/queue.module';
+import { UnitModule } from './unit/unit.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    SentryModule.forRoot(),
     SecurityModule,
     PrismaModule,
     RedisModule,
@@ -30,6 +35,7 @@ import { QueueModule } from './queue/queue.module';
     AuthModule,
     UsersModule,
     PropertyModule,
+    UnitModule,
     LeasingModule,
     ListingModule,
     UploadModule,
@@ -40,6 +46,12 @@ import { QueueModule } from './queue/queue.module';
     KeysAndLocksModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
+    },
+    AppService,
+  ],
 })
 export class AppModule {}
