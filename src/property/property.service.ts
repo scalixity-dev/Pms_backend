@@ -84,6 +84,30 @@ const propertyRelationsInclude = {
   units: {
     include: {
       amenities: true,
+      leasing: {
+        select: {
+          id: true,
+          securityDeposit: true,
+          monthlyRent: true,
+        },
+      },
+      listings: {
+        select: {
+          id: true,
+          occupancyStatus: true,
+          listingStatus: true,
+        },
+        where: {
+          listingStatus: 'ACTIVE',
+        },
+        take: 1,
+      },
+      photos: {
+        orderBy: [
+          { isPrimary: 'desc' },
+          { createdAt: 'asc' },
+        ],
+      },
     },
   },
   singleUnitDetails: {
@@ -237,30 +261,25 @@ export class PropertyService {
       });
     }
 
-    // Create units if provided (for MULTI properties)
+    // Create basic units if provided (for MULTI properties)
+    // Note: Unit details (photos, amenities, features) should be added separately via unit service
     if (createPropertyDto.units?.length) {
       for (const unit of createPropertyDto.units) {
-        const createdUnit = await this.prisma.unit.create({
+        // Only create basic unit data - photos, amenities, and detailed features
+        // should be added later via the unit service
+        await this.prisma.unit.create({
           data: {
             propertyId: property.id,
             unitName: unit.unitName,
-            apartmentType: unit.apartmentType,
+            apartmentType: unit.apartmentType || null,
             sizeSqft: unit.sizeSqft ? new Decimal(unit.sizeSqft) : null,
-            beds: unit.beds,
+            beds: unit.beds || null,
             baths: unit.baths ? new Decimal(unit.baths) : null,
             rent: unit.rent ? new Decimal(unit.rent) : null,
+            // Intentionally NOT creating amenities or photos here
+            // These should be added via unit service after unit creation
           },
         });
-
-        const unitAmenitiesData = this.buildAmenitiesData(unit.amenities, {
-          unitId: createdUnit.id,
-        });
-
-        if (unitAmenitiesData) {
-          await this.prisma.amenities.create({
-            data: unitAmenitiesData as unknown as Prisma.AmenitiesCreateInput,
-          });
-        }
       }
     }
 
@@ -319,7 +338,73 @@ export class PropertyService {
     return properties;
   }
 
-  async findOne(id: string, userId: string) {
+  async findAllUnits(userId: string) {
+    // Get all properties with their units and single unit details
+    const properties = await this.prisma.property.findMany({
+      where: {
+        managerId: userId,
+      },
+      include: {
+        address: true,
+        photos: {
+          orderBy: { isPrimary: 'desc' },
+          take: 1,
+        },
+        units: {
+          include: {
+            listings: {
+              where: {
+                listingStatus: 'ACTIVE',
+              },
+              take: 1,
+              select: {
+                id: true,
+                occupancyStatus: true,
+                listingStatus: true,
+              },
+            },
+            leasing: {
+              select: {
+                id: true,
+              },
+            },
+          },
+        },
+        singleUnitDetails: {
+          include: {
+            leasing: {
+              select: {
+                id: true,
+              },
+            },
+          },
+        },
+        leasing: {
+          select: {
+            id: true,
+          },
+        },
+        listings: {
+          where: {
+            listingStatus: 'ACTIVE',
+          },
+          take: 1,
+          select: {
+            id: true,
+            occupancyStatus: true,
+            listingStatus: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return properties;
+  }
+
+  async findOne(id: string, userId: string, includeFullUnitDetails: boolean = false) {
     const property = await this.prisma.property.findUnique({
       where: { id },
       include: propertyRelationsInclude as unknown as Prisma.PropertyInclude,
@@ -332,6 +417,62 @@ export class PropertyService {
     // Ensure the property belongs to the authenticated user
     if (property.managerId !== userId) {
       throw new ForbiddenException('You do not have permission to access this property');
+    }
+
+    // Transform response for MULTI properties
+    if (property.propertyType === 'MULTI' && property.units) {
+      if (includeFullUnitDetails) {
+        // Return full unit details for editing
+        return property;
+      } else {
+        // Return simplified unit data (count, status, and essential details) for detail view
+        const transformedUnits = property.units.map((unit: any) => {
+          // Determine occupancy status
+          // Priority: 1) Active listing occupancyStatus, 2) Has leasing record (OCCUPIED), 3) VACANT
+          let occupancyStatus: 'VACANT' | 'OCCUPIED' = 'VACANT';
+          
+          if (unit.listings && Array.isArray(unit.listings) && unit.listings.length > 0) {
+            const activeListing = unit.listings[0];
+            if (activeListing.occupancyStatus === 'OCCUPIED' || activeListing.occupancyStatus === 'PARTIALLY_OCCUPIED') {
+              occupancyStatus = 'OCCUPIED';
+            }
+          } else if (unit.leasing) {
+            // If unit has a leasing record, it's likely occupied
+            occupancyStatus = 'OCCUPIED';
+          }
+
+            // Get deposit from unit or leasing if available (prefer unit.deposit)
+            let deposit = null;
+            if (unit.deposit) {
+              deposit = typeof unit.deposit === 'object' && 'toNumber' in unit.deposit
+                ? unit.deposit.toNumber()
+                : Number(unit.deposit);
+            } else if (unit.leasing?.securityDeposit) {
+              deposit = typeof unit.leasing.securityDeposit === 'object' && 'toNumber' in unit.leasing.securityDeposit
+                ? unit.leasing.securityDeposit.toNumber()
+                : Number(unit.leasing.securityDeposit);
+            }
+
+          return {
+            id: unit.id,
+            unitName: unit.unitName,
+            status: occupancyStatus,
+            beds: unit.beds || null,
+            baths: unit.baths ? (typeof unit.baths === 'object' && 'toNumber' in unit.baths ? unit.baths.toNumber() : Number(unit.baths)) : null,
+            rent: unit.rent ? (typeof unit.rent === 'object' && 'toNumber' in unit.rent ? unit.rent.toNumber() : Number(unit.rent)) : null,
+            sizeSqft: unit.sizeSqft ? (typeof unit.sizeSqft === 'object' && 'toNumber' in unit.sizeSqft ? unit.sizeSqft.toNumber() : Number(unit.sizeSqft)) : null,
+            deposit: deposit,
+          };
+        });
+
+        return {
+          ...property,
+          units: {
+            count: transformedUnits.length,
+            units: transformedUnits,
+          },
+        };
+      }
     }
 
     return property;
@@ -352,8 +493,7 @@ export class PropertyService {
       throw new ForbiddenException('You do not have permission to update this property');
     }
 
-    // Prevent users from changing the managerId (users can only manage their own properties)
-    // Remove managerId from update if provided
+  
     const { managerId, ...updateData } = updatePropertyDto;
 
     // Handle address update - create or update address if provided
@@ -393,7 +533,16 @@ export class PropertyService {
         where: { propertyId: id },
       });
 
-      const amenitiesData = this.buildAmenitiesData(updateData.amenities, {
+      // Merge existing amenities with update data to ensure all required fields are present
+      const mergedAmenities = {
+        parking: updateData.amenities.parking ?? existingAmenities?.parking ?? 'NONE',
+        laundry: updateData.amenities.laundry ?? existingAmenities?.laundry ?? 'NONE',
+        airConditioning: updateData.amenities.airConditioning ?? existingAmenities?.airConditioning ?? 'NONE',
+        propertyFeatures: updateData.amenities.propertyFeatures ?? existingAmenities?.propertyFeatures ?? [],
+        propertyAmenities: updateData.amenities.propertyAmenities ?? existingAmenities?.propertyAmenities ?? [],
+      };
+
+      const amenitiesData = this.buildAmenitiesData(mergedAmenities as CreateAmenitiesDto, {
         propertyId: id,
       });
 
@@ -444,6 +593,72 @@ export class PropertyService {
               propertyId: id,
               photoUrl: photo.photoUrl,
               isPrimary: photo.isPrimary || false,
+            },
+          });
+        }
+      }
+    }
+
+    // Handle units update for MULTI properties
+    if (updateData.units?.length && existingProperty.propertyType === 'MULTI') {
+      // Get existing units
+      const existingUnits = await this.prisma.unit.findMany({
+        where: { propertyId: id },
+      });
+
+      const existingUnitIds = new Set(existingUnits.map(u => u.id));
+      const incomingUnitIds = new Set(
+        updateData.units
+          .map((u: any) => u.id)
+          .filter((id: any) => id !== undefined && id !== null),
+      );
+
+      // Delete units that are not in the incoming list
+      const unitsToDelete = existingUnits.filter(
+        (u) => !incomingUnitIds.has(u.id),
+      );
+      for (const unit of unitsToDelete) {
+        await this.prisma.unit.delete({
+          where: { id: unit.id },
+        });
+      }
+
+      // Update or create basic units only
+      // Note: Unit details (photos, amenities, features) should be managed via unit service
+      for (const unitData of updateData.units as any[]) {
+        const unitId = (unitData as any).id;
+        if (unitId && existingUnitIds.has(unitId)) {
+          // Update existing unit - only basic fields
+          await this.prisma.unit.update({
+            where: { id: unitId },
+            data: {
+              unitName: unitData.unitName,
+              apartmentType: unitData.apartmentType || null,
+              sizeSqft: unitData.sizeSqft
+                ? new Decimal(unitData.sizeSqft)
+                : null,
+              beds: unitData.beds || null,
+              baths: unitData.baths ? new Decimal(unitData.baths) : null,
+              rent: unitData.rent ? new Decimal(unitData.rent) : null,
+              // Intentionally NOT updating amenities or photos here
+              // These should be managed via unit service
+            },
+          });
+        } else {
+          // Create new unit - only basic fields
+          await this.prisma.unit.create({
+            data: {
+              propertyId: id,
+              unitName: unitData.unitName,
+              apartmentType: unitData.apartmentType || null,
+              sizeSqft: unitData.sizeSqft
+                ? new Decimal(unitData.sizeSqft)
+                : null,
+              beds: unitData.beds || null,
+              baths: unitData.baths ? new Decimal(unitData.baths) : null,
+              rent: unitData.rent ? new Decimal(unitData.rent) : null,
+              // Intentionally NOT creating amenities or photos here
+              // These should be added via unit service after unit creation
             },
           });
         }

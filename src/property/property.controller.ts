@@ -176,14 +176,29 @@ export class PropertyController {
     return this.propertyService.findAll(userId, shouldIncludeListings);
   }
 
-  @Get(':id')
+  @Get('units/all')
   @HttpCode(HttpStatus.OK)
-  async findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  async findAllUnits(@Req() req: AuthenticatedRequest) {
     const userId = req.user?.userId;
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.propertyService.findOne(id, userId);
+    return this.propertyService.findAllUnits(userId);
+  }
+
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  async findOne(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('includeFullUnitDetails') includeFullUnitDetails?: string,
+  ) {
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    const includeFull = includeFullUnitDetails === 'true';
+    return this.propertyService.findOne(id, userId, includeFull);
   }
 
   @Patch(':id')
