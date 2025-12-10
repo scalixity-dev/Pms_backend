@@ -4,9 +4,7 @@ import * as Sentry from "@sentry/nestjs"
 Sentry.init({
   dsn: "https://116a277a785118fa3250e06b3192c215@o4510504007630848.ingest.de.sentry.io/4510504017395792",
   
-  // Setting this option to true will send default PII data to Sentry.
-  // For example, automatic IP address collection on events
-  sendDefaultPii: true,
+  sendDefaultPii: false,
   
   // Set the environment (development, production, etc.)
   environment: process.env.NODE_ENV || 'development',
