@@ -31,7 +31,7 @@ model User {
   currentListings             Listing[]               @relation("CurrentTenantListings")
   assignedMaintenanceRequests MaintenanceAssignment[] @relation("AssignedMaintenanceRequests")
   maintenanceRequests         MaintenanceRequest[]    @relation("ManagerMaintenanceRequests")
-  tasks                       tasks[]
+  tasks                       Task[]
 }
 
 model UserAuthIdentity {
@@ -659,6 +659,8 @@ model BackgroundQuestion {
   @@map("background_questions")
 }
 
+
+
 model tasks {
   id          String         @id
   userId      String
@@ -680,6 +682,7 @@ model tasks {
   @@index([propertyId])
   @@index([status])
   @@index([userId])
+
 }
 
 enum UserRole {
@@ -894,6 +897,11 @@ enum KeyStatus {
   INACTIVE
 }
 
+enum TaskStatus {
+  OPEN
+  RESOLVED
+}
+
 enum TaskFrequency {
   DAILY
   WEEKLY
@@ -902,9 +910,4 @@ enum TaskFrequency {
   QUARTERLY
   EVERY_SIX_MONTHS
   YEARLY
-}
-
-enum TaskStatus {
-  OPEN
-  RESOLVED
 }
