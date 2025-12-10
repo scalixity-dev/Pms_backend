@@ -31,7 +31,7 @@ model User {
   currentListings             Listing[]               @relation("CurrentTenantListings")
   assignedMaintenanceRequests MaintenanceAssignment[] @relation("AssignedMaintenanceRequests")
   maintenanceRequests         MaintenanceRequest[]    @relation("ManagerMaintenanceRequests")
-  tasks                       Task[]
+  tasks                       tasks[]
 }
 
 model UserAuthIdentity {
