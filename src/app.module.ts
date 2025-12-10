@@ -16,6 +16,9 @@ import { ServiceProviderModule } from './service-provider/service-provider.modul
 import { KeysAndLocksModule } from './keys-and-locks/keys-and-locks.module';
 import { ListingModule } from './listing/listing.module';
 import { TasksModule } from './tasks/tasks.module';
+import { RedisModule } from './redis/redis.module';
+import { QueueModule } from './queue/queue.module';
+import { UnitModule } from './unit/unit.module';
 
 @Module({
   imports: [
@@ -24,9 +27,12 @@ import { TasksModule } from './tasks/tasks.module';
     }),
     SecurityModule,
     PrismaModule,
+    RedisModule,
+    QueueModule,
     AuthModule,
     UsersModule,
     PropertyModule,
+    UnitModule,
     LeasingModule,
     ListingModule,
     UploadModule,
