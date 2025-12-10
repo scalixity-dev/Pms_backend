@@ -10,7 +10,7 @@ import { TaskStatus } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 
 const taskInclude = {
-  user: {
+  User: {
     select: {
       id: true,
       email: true,
@@ -24,8 +24,9 @@ export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createTaskDto: CreateTaskDto, userId: string) {
-    const data: Prisma.TaskCreateInput = {
-      user: {
+    const data: Prisma.tasksCreateInput = {
+      id: crypto.randomUUID(),
+      User: {
         connect: { id: userId },
       },
       title: createTaskDto.title,
@@ -40,9 +41,10 @@ export class TasksService {
       endDate: createTaskDto.endDate
         ? new Date(createTaskDto.endDate)
         : undefined,
+      updatedAt: new Date(),
     };
 
-    const task = await this.prisma.task.create({
+    const task = await this.prisma.tasks.create({
       data,
       include: taskInclude,
     });
@@ -51,7 +53,7 @@ export class TasksService {
   }
 
   async findAll(userId?: string, filters?: { status?: TaskStatus; propertyId?: string }) {
-    const where: Prisma.TaskWhereInput = {};
+    const where: Prisma.tasksWhereInput = {};
 
     if (userId) {
       where.userId = userId;
@@ -65,7 +67,7 @@ export class TasksService {
       where.propertyId = filters.propertyId;
     }
 
-    const tasks = await this.prisma.task.findMany({
+    const tasks = await this.prisma.tasks.findMany({
       where,
       include: taskInclude,
       orderBy: {
@@ -77,7 +79,7 @@ export class TasksService {
   }
 
   async findByPropertyId(propertyId: string, userId?: string) {
-    const where: Prisma.TaskWhereInput = {
+    const where: Prisma.tasksWhereInput = {
       propertyId,
     };
 
@@ -85,7 +87,7 @@ export class TasksService {
       where.userId = userId;
     }
 
-    const tasks = await this.prisma.task.findMany({
+    const tasks = await this.prisma.tasks.findMany({
       where,
       include: taskInclude,
       orderBy: {
@@ -97,7 +99,7 @@ export class TasksService {
   }
 
   async findOne(id: string, userId?: string) {
-    const task = await this.prisma.task.findUnique({
+    const task = await this.prisma.tasks.findUnique({
       where: { id },
       include: taskInclude,
     });
@@ -118,7 +120,7 @@ export class TasksService {
 
   async update(id: string, updateTaskDto: UpdateTaskDto, userId?: string) {
     // Verify task exists
-    const existingTask = await this.prisma.task.findUnique({
+    const existingTask = await this.prisma.tasks.findUnique({
       where: { id },
     });
 
@@ -134,7 +136,7 @@ export class TasksService {
     }
 
     // Prepare update data
-    const updateData: Prisma.TaskUpdateInput = {};
+    const updateData: Prisma.tasksUpdateInput = {};
 
     if (updateTaskDto.title !== undefined) {
       updateData.title = updateTaskDto.title;
@@ -180,7 +182,7 @@ export class TasksService {
         : null;
     }
 
-    const updatedTask = await this.prisma.task.update({
+    const updatedTask = await this.prisma.tasks.update({
       where: { id },
       data: updateData,
       include: taskInclude,
@@ -191,7 +193,7 @@ export class TasksService {
 
   async remove(id: string, userId?: string) {
     // Verify task exists
-    const existingTask = await this.prisma.task.findUnique({
+    const existingTask = await this.prisma.tasks.findUnique({
       where: { id },
     });
 
@@ -206,7 +208,7 @@ export class TasksService {
       );
     }
 
-    await this.prisma.task.delete({
+    await this.prisma.tasks.delete({
       where: { id },
     });
 
