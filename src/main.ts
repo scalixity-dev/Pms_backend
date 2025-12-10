@@ -1,3 +1,8 @@
+// IMPORTANT: Make sure to import `instrument.ts` at the top of your file.
+// This initializes Sentry before everything else
+import "./instrument";
+
+// All other imports below
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
@@ -10,6 +15,7 @@ import { CompressionLoggerMiddleware } from './middleware/compression-logger.mid
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
+import * as Sentry from "@sentry/nestjs"
 
 /**
  * Validate critical environment variables before application startup
@@ -59,19 +65,11 @@ async function bootstrap() {
   // Validate environment variables before creating the app
   // This ensures we fail fast with clear error messages
   validateEnvironmentVariables();
-
-  // Now create the actual application
   const app = await NestFactory.create(AppModule);
-  
-  // Get ConfigService for security configuration
   const configService = app.get(ConfigService);
   
-  // Enable cookie parser
+  // Enable cookie parser - MUST be before CORS and other middleware
   app.use(cookieParser());
-  
-  // Configure security headers using Helmet
-  const helmetConfig = getHelmetConfig(configService);
-  app.use(helmet(helmetConfig));
   
   // Configure CORS using security config
   const corsConfig = getCorsConfig(configService);
