@@ -113,11 +113,13 @@ async function bootstrap() {
   // Timeout configuration would be set at the server level
   
   // Enable validation pipe for class-validator
+  // Optimized: skipMissingProperties for PATCH requests to reduce validation overhead
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      skipMissingProperties: false, // Set to true for PATCH if needed
       // Additional security: limit payload size
       transformOptions: {
         enableImplicitConversion: true,

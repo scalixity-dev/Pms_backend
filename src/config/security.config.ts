@@ -192,7 +192,7 @@ export function getCompressionConfig(configService: ConfigService) {
 
   return {
     enabled: configService.get<boolean>('COMPRESSION_ENABLED', true),
-    level: configService.get<number>('COMPRESSION_LEVEL', isProduction ? 6 : 1),
+    level: configService.get<number>('COMPRESSION_LEVEL', isProduction ? 4 : 1),
     threshold: configService.get<number>('COMPRESSION_THRESHOLD', 1024),
     filter: (req: any, res: any) => {
       if (req.headers['x-no-compression']) {

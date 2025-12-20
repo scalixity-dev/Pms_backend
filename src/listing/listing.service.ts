@@ -10,6 +10,54 @@ import { UpdateListingDto } from './dto/update-listing.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 import { Prisma } from '@prisma/client';
 
+// Lightweight include for list view (without heavy relations)
+const listingListInclude = {
+  property: {
+    select: {
+      id: true,
+      propertyName: true,
+      propertyType: true,
+      coverPhotoUrl: true,
+      status: true,
+      manager: {
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+        },
+      },
+      address: {
+        select: {
+          streetAddress: true,
+          city: true,
+          stateRegion: true,
+          zipCode: true,
+          country: true,
+        },
+      },
+      photos: {
+        select: {
+          id: true,
+          photoUrl: true,
+          isPrimary: true,
+        },
+        take: 1,
+      },
+    },
+  },
+  unit: {
+    select: {
+      id: true,
+      unitName: true,
+      apartmentType: true,
+      beds: true,
+      baths: true,
+      rent: true,
+    },
+  },
+} as const;
+
+// Full include with all relations (for detail view)
 const listingInclude = {
   property: {
     include: {
@@ -228,6 +276,7 @@ export class ListingService {
     return this.cache.getOrSet(
       cacheKey,
       async () => {
+        // Use lightweight include for list view to optimize performance
         const listings = await this.prisma.listing.findMany({
           where: userId
             ? {
@@ -236,7 +285,7 @@ export class ListingService {
                 },
               }
             : undefined,
-          include: listingInclude as Prisma.ListingInclude,
+          include: listingListInclude as Prisma.ListingInclude,
           orderBy: {
             createdAt: 'desc',
           },

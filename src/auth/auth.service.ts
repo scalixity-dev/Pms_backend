@@ -140,6 +140,7 @@ export class AuthService {
 
   /**
    * Validate device token from cookie
+   * Optimized to batch hash verification operations and limit device queries
    */
   async validateDeviceToken(
     userId: string,
@@ -150,7 +151,8 @@ export class AuthService {
       return { isValid: false };
     }
 
-    // Find all devices for this user with non-revoked, non-expired tokens
+    // Find devices for this user with non-revoked, non-expired tokens
+    // Limit to recent devices to avoid checking too many (max 10 devices)
     const devices = await this.prisma.device.findMany({
       where: {
         userId,
@@ -161,37 +163,52 @@ export class AuthService {
           { tokenExpiresAt: { gt: new Date() } },
         ],
       },
+      select: {
+        id: true,
+        deviceTokenHash: true,
+        deviceFingerprint: true,
+      },
+      take: 10,
+      orderBy: {
+        lastSeenAt: 'desc',
+      },
     });
 
-    // Try to verify the token against each device's stored hash
-    for (const device of devices) {
-      if (!device.deviceTokenHash) continue;
+    if (devices.length === 0) {
+      return { isValid: false };
+    }
 
+    // Batch verify all device token hashes in parallel
+    const verificationPromises = devices.map(async (device) => {
+      if (!device.deviceTokenHash) return null;
       const isValid = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
+      return isValid ? device : null;
+    });
 
-      if (isValid) {
-        // Token matches this device
-        // Check if fingerprint is provided and matches
-        if (deviceFingerprint && device.deviceFingerprint) {
-          const fingerprintMatches = device.deviceFingerprint === deviceFingerprint;
-          if (!fingerprintMatches) {
-            // Fingerprint doesn't match - require OTP but token is technically valid
-            return { isValid: true, deviceId: device.id, requiresFingerprintMatch: true };
-          }
-        }
+    const verificationResults = await Promise.all(verificationPromises);
+    const matchingDevice = verificationResults.find((result) => result !== null);
 
-        // Update last seen
-        await this.prisma.device.update({
-          where: { id: device.id },
-          data: { lastSeenAt: new Date() },
-        });
+    if (!matchingDevice) {
+      return { isValid: false };
+    }
 
-        return { isValid: true, deviceId: device.id };
+    // Token matches this device
+    // Check if fingerprint is provided and matches
+    if (deviceFingerprint && matchingDevice.deviceFingerprint) {
+      const fingerprintMatches = matchingDevice.deviceFingerprint === deviceFingerprint;
+      if (!fingerprintMatches) {
+        // Fingerprint doesn't match - require OTP but token is technically valid
+        return { isValid: true, deviceId: matchingDevice.id, requiresFingerprintMatch: true };
       }
     }
 
-    // No matching token found
-    return { isValid: false };
+    // Update last seen
+    await this.prisma.device.update({
+      where: { id: matchingDevice.id },
+      data: { lastSeenAt: new Date() },
+    });
+
+    return { isValid: true, deviceId: matchingDevice.id };
   }
 
   /**
@@ -212,23 +229,38 @@ export class AuthService {
       // Reuse existing token from cookie - verify against stored hashes
       deviceToken = existingDeviceToken;
 
-      // Query all devices for this user to find a matching token hash
+      // Query devices for this user to find a matching token hash
+      // Limit to recent devices (max 10) to optimize performance
       const userDevices = await this.prisma.device.findMany({
         where: {
           userId,
           deviceTokenHash: { not: null },
         },
+        select: {
+          id: true,
+          deviceTokenHash: true,
+        },
+        take: 10,
+        orderBy: {
+          lastSeenAt: 'desc',
+        },
       });
 
-      // Iterate through devices and verify the token against stored hashes
-      for (const device of userDevices) {
-        if (!device.deviceTokenHash) continue;
+      if (userDevices.length > 0) {
+        // Batch verify all device token hashes in parallel
+        const verificationPromises = userDevices.map(async (device) => {
+          if (!device.deviceTokenHash) return null;
+          const isMatch = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
+          return isMatch ? device : null;
+        });
 
-        const isMatch = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
-        if (isMatch) {
+        const verificationResults = await Promise.all(verificationPromises);
+        const matchingDevice = verificationResults.find((result) => result !== null);
+
+        if (matchingDevice) {
           // Found matching device - update and reuse it
           await this.prisma.device.update({
-            where: { id: device.id },
+            where: { id: matchingDevice.id },
             data: {
               ipAddress,
               userAgent,
@@ -239,7 +271,7 @@ export class AuthService {
               lastSeenAt: new Date(),
             },
           });
-          return { deviceToken, deviceId: device.id };
+          return { deviceToken, deviceId: matchingDevice.id };
         }
       }
 
@@ -282,31 +314,47 @@ export class AuthService {
 
   /**
    * Revoke device token
+   * Optimized to batch hash verification operations
    */
   async revokeDeviceToken(userId: string, deviceToken: string): Promise<void> {
-    // Find all devices for this user with tokens
+    // Find devices for this user with tokens
+    // Limit to recent devices (max 10) to optimize performance
     const devices = await this.prisma.device.findMany({
       where: {
         userId,
         deviceTokenHash: { not: null },
         isRevoked: false,
       },
+      select: {
+        id: true,
+        deviceTokenHash: true,
+      },
+      take: 10,
+      orderBy: {
+        lastSeenAt: 'desc',
+      },
     });
 
-    // Try to verify the token against each device's stored hash
-    for (const device of devices) {
-      if (!device.deviceTokenHash) continue;
+    if (devices.length === 0) {
+      return;
+    }
 
+    // Batch verify all device token hashes in parallel
+    const verificationPromises = devices.map(async (device) => {
+      if (!device.deviceTokenHash) return null;
       const isValid = await this.verifyDeviceTokenHash(deviceToken, device.deviceTokenHash);
+      return isValid ? device : null;
+    });
 
-      if (isValid) {
-        // Revoke this device's token
-        await this.prisma.device.update({
-          where: { id: device.id },
-          data: { isRevoked: true },
-        });
-        return;
-      }
+    const verificationResults = await Promise.all(verificationPromises);
+    const matchingDevice = verificationResults.find((result) => result !== null);
+
+    if (matchingDevice) {
+      // Revoke this device's token
+      await this.prisma.device.update({
+        where: { id: matchingDevice.id },
+        data: { isRevoked: true },
+      });
     }
   }
 

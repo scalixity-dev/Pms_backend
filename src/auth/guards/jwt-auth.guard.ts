@@ -20,7 +20,17 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const token = request.cookies?.['access_token'];
+    
+    // Try to get token from cookies first (for browser requests)
+    let token = request.cookies?.['access_token'];
+    
+    // If no cookie token, try Authorization header (for API clients like Postman)
+    if (!token) {
+      const authHeader = request.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7); // Remove 'Bearer ' prefix
+      }
+    }
 
     if (!token) {
       throw new UnauthorizedException('No authentication token provided');
@@ -39,6 +49,8 @@ export class JwtAuthGuard implements CanActivate {
       let user = cachedData?.user;
 
       if (!user) {
+        // Optimized query: fetch full user but filter subscriptions to only active/trialing
+        // Limiting to 1 subscription reduces data transfer while maintaining type compatibility
         const dbUser = await this.prisma.user.findUnique({
           where: { id: payload.userId },
           include: {
@@ -62,6 +74,11 @@ export class JwtAuthGuard implements CanActivate {
 
         user = dbUser;
         this.userCache.set(payload.userId, user);
+      }
+
+      // Type guard: ensure user is defined (should never be undefined after this point)
+      if (!user) {
+        throw new UnauthorizedException('User not found');
       }
 
       // Get the route path to determine if checks should be skipped

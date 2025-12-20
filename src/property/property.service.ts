@@ -405,12 +405,22 @@ export class PropertyService {
     // Remove managerId from update if provided
     const { managerId, ...updateData } = updatePropertyDto;
 
-    // Handle address update - create or update address if provided
-    if (updateData.address) {
-      const existingAddress = await this.prisma.address.findUnique({
-        where: { propertyId: id },
-      });
+    // Handle address and amenities updates in parallel for better performance
+    const [existingAddress, existingAmenities] = await Promise.all([
+      updateData.address
+        ? this.prisma.address.findUnique({
+            where: { propertyId: id },
+          })
+        : Promise.resolve(null),
+      updateData.amenities
+        ? this.prisma.amenities.findUnique({
+            where: { propertyId: id },
+          })
+        : Promise.resolve(null),
+    ]);
 
+    // Process address update if provided
+    if (updateData.address) {
       if (existingAddress) {
         await this.prisma.address.update({
           where: { id: existingAddress.id },
@@ -438,10 +448,6 @@ export class PropertyService {
 
     // Handle amenities update if provided
     if (updateData.amenities) {
-      const existingAmenities = await this.prisma.amenities.findUnique({
-        where: { propertyId: id },
-      });
-
       const amenitiesData = this.buildAmenitiesData(updateData.amenities, {
         propertyId: id,
       });
@@ -470,25 +476,32 @@ export class PropertyService {
         data: { isPrimary: false },
       });
 
-      // Then, create or update photos
-      for (const photo of updateData.photos) {
-        // Check if photo with this URL already exists
-        const existingPhoto = await this.prisma.propertyPhoto.findFirst({
-          where: {
-            propertyId: id,
-            photoUrl: photo.photoUrl,
-          },
-        });
+      // Batch check all existing photos in parallel
+      const photoUrls = updateData.photos.map(photo => photo.photoUrl);
+      const existingPhotos = await this.prisma.propertyPhoto.findMany({
+        where: {
+          propertyId: id,
+          photoUrl: { in: photoUrls },
+        },
+      });
 
+      // Create a map for quick lookup
+      const existingPhotosMap = new Map(
+        existingPhotos.map(photo => [photo.photoUrl, photo])
+      );
+
+      // Batch create/update operations
+      const photoOperations = updateData.photos.map(photo => {
+        const existingPhoto = existingPhotosMap.get(photo.photoUrl);
         if (existingPhoto) {
           // Update existing photo
-          await this.prisma.propertyPhoto.update({
+          return this.prisma.propertyPhoto.update({
             where: { id: existingPhoto.id },
             data: { isPrimary: photo.isPrimary || false },
           });
         } else {
           // Create new photo
-          await this.prisma.propertyPhoto.create({
+          return this.prisma.propertyPhoto.create({
             data: {
               propertyId: id,
               photoUrl: photo.photoUrl,
@@ -496,7 +509,9 @@ export class PropertyService {
             },
           });
         }
-      }
+      });
+
+      await Promise.all(photoOperations);
     }
 
     // Update the property

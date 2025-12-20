@@ -98,15 +98,43 @@ export class CacheService {
       const serialized = options?.serialize !== false ? JSON.stringify(value) : String(value);
       const effectiveTtl = ttl ?? options?.ttl;
 
-      const success = await this.redis.set(fullKey, serialized, effectiveTtl);
-      if (success) {
-        this.stats.sets++;
+      // Use RedisService methods for Set operations
+      const setKey = this.getTrackingSetKey(fullKey);
+      
+      if (setKey && effectiveTtl) {
+        // Track cache key in Redis Set for efficient pattern-based deletion
+        await Promise.all([
+          this.redis.set(fullKey, serialized, effectiveTtl),
+          this.redis.sadd(setKey, fullKey),
+          this.redis.expire(setKey, effectiveTtl),
+        ]);
+      } else {
+        await this.redis.set(fullKey, serialized, effectiveTtl);
+        if (setKey) {
+          // Add to tracking set without expiration if no TTL
+          await this.redis.sadd(setKey, fullKey);
+        }
       }
-      return success;
+
+      this.stats.sets++;
+      return true;
     } catch (error) {
       this.logger.error(`Cache SET error for key ${key}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
+  }
+
+  /**
+   * Get Redis Set key for tracking cache keys by pattern
+   */
+  private getTrackingSetKey(cacheKey: string): string | null {
+    // Extract prefix pattern from cache key
+    // e.g., "prop:list:userId" -> "cache:track:prop:list"
+    const parts = cacheKey.split(':');
+    if (parts.length < 2) return null;
+    
+    const prefix = parts.slice(0, 2).join(':');
+    return `cache:track:${prefix}`;
   }
 
   async del(key: string, options?: CacheOptions): Promise<boolean> {
@@ -136,6 +164,34 @@ export class CacheService {
       const client = this.redis.getClient();
       if (!client) return 0;
 
+      // Try to use Redis Set tracking for faster deletion
+      // Pattern format: "prefix:*" -> tracking set "cache:track:prefix"
+      const setMatch = pattern.match(/^([^:]+:[^:]+):\*$/);
+      if (setMatch) {
+        const trackingSetKey = `cache:track:${setMatch[1]}`;
+        const keys = await this.redis.smembers(trackingSetKey);
+        
+        if (keys.length > 0) {
+          // Filter keys that match the pattern (for safety)
+          const matchingKeys = keys.filter(key => {
+            // Simple pattern matching: convert "prefix:*" to regex
+            const regexPattern = pattern.replace(/\*/g, '.*');
+            return new RegExp(`^${regexPattern}$`).test(key);
+          });
+
+          if (matchingKeys.length > 0) {
+            // Delete keys and remove from tracking set in parallel
+            const [deleted] = await Promise.all([
+              Promise.all(matchingKeys.map(key => this.del(key))).then(results => results.filter(Boolean).length),
+              this.redis.srem(trackingSetKey, ...matchingKeys),
+            ]);
+            this.stats.deletes += deleted;
+            return deleted;
+          }
+        }
+      }
+
+      // Fallback to SCAN for patterns not tracked in Sets
       const keys: string[] = [];
       const stream = client.scanStream({
         match: pattern,

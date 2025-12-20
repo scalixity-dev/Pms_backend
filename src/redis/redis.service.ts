@@ -43,6 +43,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         maxRetriesPerRequest: 3,
         enableReadyCheck: true,
         lazyConnect: false,
+        enableOfflineQueue: false,
+        keepAlive: 30000,
+        connectTimeout: 10000,
       });
 
       this.client.on('connect', () => {
@@ -184,6 +187,59 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       return result === 'PONG';
     } catch (error) {
       this.logger.error(`Redis PING error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return false;
+    }
+  }
+
+  async sadd(key: string, ...members: string[]): Promise<number> {
+    if (!this.isAvailable()) {
+      return 0;
+    }
+
+    try {
+      return await this.client!.sadd(key, ...members);
+    } catch (error) {
+      this.logger.error(`Redis SADD error for key ${key}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return 0;
+    }
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    if (!this.isAvailable()) {
+      return [];
+    }
+
+    try {
+      return await this.client!.smembers(key);
+    } catch (error) {
+      this.logger.error(`Redis SMEMBERS error for key ${key}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return [];
+    }
+  }
+
+  async srem(key: string, ...members: string[]): Promise<number> {
+    if (!this.isAvailable()) {
+      return 0;
+    }
+
+    try {
+      return await this.client!.srem(key, ...members);
+    } catch (error) {
+      this.logger.error(`Redis SREM error for key ${key}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return 0;
+    }
+  }
+
+  async expire(key: string, seconds: number): Promise<boolean> {
+    if (!this.isAvailable()) {
+      return false;
+    }
+
+    try {
+      const result = await this.client!.expire(key, seconds);
+      return result === 1;
+    } catch (error) {
+      this.logger.error(`Redis EXPIRE error for key ${key}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
   }
